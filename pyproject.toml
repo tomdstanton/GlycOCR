@@ -1,0 +1,82 @@
+[project]
+name = "foldgemma"
+authors = [{ name = "Tom Stanton", email = "tomdstanton@gmail.com" }]
+description = "FoldGemma: Protein folding language models"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dynamic = ["version"]
+keywords = ["bioinformatics", "genomics", "serotyping", "microbiology"]
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Typing :: Typed",
+]
+dependencies = [
+    "huggingface-hub>=1.24.0",
+    "safetensors",
+    "torch>=2.0.0",
+]
+
+[project.optional-dependencies]
+train = [
+    "tensorflow-cpu<2.18",
+    "numpy",
+]
+
+[dependency-groups]
+test = ["foldgemma[train]", "pytest>=8.0.0", "pytest-cov"]
+dev = [
+    { include-group = "test" },
+]
+
+[project.urls]
+Homepage = "https://github.com/tomdstanton/FoldGemma"
+Repository = "https://github.com/tomdstanton/FoldGemma"
+Documentation = "https://github.com/tomdstanton/FoldGemma"
+"Bug Tracker" = "https://github.com/tomdstanton/FoldGemma/issues"
+Changelog = "https://github.com/tomdstanton/FoldGemma/blob/master/CHANGELOG.md"
+
+[project.scripts]
+foldgemma = "foldgemma.cli:main"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling", "hatch-vcs"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/foldgemma/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foldgemma"]
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+testpaths = ["tests", "src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [".agents", ".git", ".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ty]
+# Static type checking configuration
