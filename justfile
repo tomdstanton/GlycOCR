@@ -1,4 +1,4 @@
-# FoldGemma Project Justfile
+# GlycOCR Project Justfile
 # Run `just` to see all available commands
 
 set shell := ["bash", "-uc"]
@@ -20,21 +20,27 @@ install: clean
 test: install
     uv run pytest tests/
 
-# Format Python code
+# Format all Python code
 fmt:
-    uv run black .
+    uvx ruff format .
 
-# Check Python formatting
+# Check if code is formatted without modifying files
 fmt-check:
-    uv run black --check .
+    uvx ruff format --check .
 
-# Lint Python code
+# Lint Python code and auto-fix safe errors
 lint:
-    uv run ruff check .
-    uv run ty check
+    uvx ruff check --fix .
+
+# Static type-check Python code
+type-check:
+    uvx ty check .
+
+# Run all quality checks at once (ideal for local pre-commit testing)
+check-all: fmt-check lint type-check
 
 # Run the full CI pipeline locally (format check, lint, test)
-ci: fmt-check lint test
+ci: check-all test
 
 # Build the Python package
 build:
@@ -44,6 +50,20 @@ build:
 publish:
     uv publish
 
-# Prepare Steinegger Lab AFDB data into TFRecords for training
-build-dataset tsv fcz out_dir:
-    uv run foldgemma prep --tsv {{tsv}} --fcz {{fcz}} --out-dir {{out_dir}}
+# --- GlycOCR CLI Commands ---
+
+# 1. Fetch real glycans and generate dataset list
+fetch-dataset:
+    uv run glycocr fetch-dataset --output data/dataset_iupac.txt --synthetic-ratio 0.5 --verbose
+
+# 2. Synthesize SNFG images from the generated IUPAC list
+synthesize:
+    uv run glycocr synthesize --iupac-list data/dataset_iupac.txt --out-dir data/images/ --verbose
+
+# 3. Train the model on the generated dataset (WARNING: Requires GPU / HPC)
+train:
+    uv run glycocr train --data-dir data/images/ --output-dir models/checkpoints/ --epochs 3 --batch-size 4 --lr 0.0005 --verbose
+
+# 4. Predict an IUPAC string from an SNFG image
+predict IMAGE_PATH:
+    uv run glycocr predict --image {{IMAGE_PATH}} --verbose

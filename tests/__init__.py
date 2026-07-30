@@ -1,1 +1,1 @@
-"""Tests package for FastProtT5."""
+"""Tests package for GlycOCR"""

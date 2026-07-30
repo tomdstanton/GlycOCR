@@ -1,7 +1,7 @@
 [project]
-name = "foldgemma"
+name = "glycocr"
 authors = [{ name = "Tom Stanton", email = "tomdstanton@gmail.com" }]
-description = "FoldGemma: Protein folding language models"
+description = "GlycOCR: Vision Model for converting SNFG to IUPAC"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 dynamic = ["version"]
@@ -26,32 +26,54 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "huggingface-hub>=1.24.0",
-    "safetensors",
-    "torch>=2.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
+data = [
+    "glycowork>=1.0.0",
+    "numpy>=1.24.0",
+]
+inference = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.40.0",
+    "peft>=0.10.0",
+    "einops>=0.7.0,<0.8.0",
+    "timm>=0.9.0",
+    "numpy>=1.24.0",
+    "glycocr[data]",
+]
 train = [
-    "tensorflow-cpu<2.18",
-    "numpy",
+    "kornia>=0.7.0",
+    "glycocr[inference]",
+]
+all = [
+    "glycocr[train]",
 ]
 
 [dependency-groups]
-test = ["foldgemma[train]", "pytest>=8.0.0", "pytest-cov"]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov",
+]
 dev = [
+    "glycocr[train]",
     { include-group = "test" },
 ]
 
 [project.urls]
-Homepage = "https://github.com/tomdstanton/FoldGemma"
-Repository = "https://github.com/tomdstanton/FoldGemma"
-Documentation = "https://github.com/tomdstanton/FoldGemma"
-"Bug Tracker" = "https://github.com/tomdstanton/FoldGemma/issues"
-Changelog = "https://github.com/tomdstanton/FoldGemma/blob/master/CHANGELOG.md"
+Homepage = "https://github.com/tomdstanton/GlycOCR"
+Repository = "https://github.com/tomdstanton/GlycOCR"
+Documentation = "https://github.com/tomdstanton/GlycOCR"
+"Bug Tracker" = "https://github.com/tomdstanton/GlycOCR/issues"
+Changelog = "https://github.com/tomdstanton/GlycOCR/blob/master/CHANGELOG.md"
 
 [project.scripts]
-foldgemma = "foldgemma.cli:main"
+glycocr = "glycocr.cli:app"
 
 [build-system]
 build-backend = "hatchling.build"
@@ -61,10 +83,10 @@ requires = ["hatchling", "hatch-vcs"]
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/foldgemma/_version.py"
+version-file = "src/glycocr/_version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/foldgemma"]
+packages = ["src/glycocr"]
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
@@ -72,11 +94,17 @@ testpaths = ["tests", "src"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
 exclude = [".agents", ".git", ".venv", "__pycache__"]
+target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "D"]
+extend-select = ["ANN", "PYI"]
+preview = true
 
-[tool.ty]
-# Static type checking configuration
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.rules]
+missing-type-argument = "error"
+possibly-unresolved-reference = "warn"

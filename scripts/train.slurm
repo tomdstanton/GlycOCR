@@ -1,28 +1,45 @@
 #!/bin/bash
-#SBATCH --job-name=foldgemma_train
-#SBATCH --account=<YOUR_ACCOUNT_ID>
-#SBATCH --time=48:00:00                 # Max walltime (models take time to train!)
+#SBATCH --job-name=glycocr-train
+#SBATCH --account=<YOUR_PROJECT_CODE>
+#SBATCH --time=24:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8               # 8 CPUs ensures SeqIO/TFRecords don't bottleneck the GPU
-#SBATCH --mem=64G                       # High RAM to buffer the TFRecord pipeline
-#SBATCH --partition=m3g                 # GPU partition
-#SBATCH --gres=gpu:A100:1               # Explicitly request an A100 (Ampere architecture is insanely fast)
-#SBATCH --output=logs/train_%j.out
-#SBATCH --error=logs/train_%j.err
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:A100:1
+#SBATCH --output=slurm-%j.out
+#SBATCH --error=slurm-%j.err
 
-module purge
-module load python/3.10.10-gcc-11.2.0
+echo "Starting GlycOCR training job..."
+echo "Node: $HOSTNAME"
+echo "Job ID: $SLURM_JOB_ID"
 
-# 1. ALWAYS run from /scratch on M3 for heavy I/O workloads!
-# Home directories are too slow for TFRecord streaming and will bottleneck your GPU.
-cd /scratch/$USER/FoldGemma
+# 2. Setup the environment with uv
+# If uv is not installed on M3 globally, install it locally:
+if ! command -v uv &> /dev/null; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
 
-# 2. Run the training via the CLI
-# Note: Because you used `uv sync`, `uv run` handles the virtualenv automatically.
-uv run foldgemma train \
-    --tfrecord-dir /scratch/$USER/datasets/afdb_tfrecords \
-    --output-dir /scratch/$USER/FoldGemma/checkpoints \
-    --model-type foldgemma \
-    --batch-size 32 \
-    --learning-rate 3e-4 \
-    --epochs 10
+# 3. Install dependencies 
+# We sync all dependencies, including the [train] group we set up earlier
+echo "Syncing dependencies with uv..."
+uv sync --extra train
+
+# 4. Synthesize the dataset (if not already synthesized)
+# We synthesize a large dataset for training. 
+# You may want to adjust the size depending on your compute limits.
+DATA_DIR="data/training_set"
+if [ ! -d "$DATA_DIR" ]; then
+    echo "Synthesizing training data..."
+    uv run glycocr synthesize --out-dir $DATA_DIR --size 50000
+else
+    echo "Training data already exists at $DATA_DIR"
+fi
+
+# 5. Run the training pipeline
+echo "Kicking off model training..."
+uv run glycocr train --data-dir $DATA_DIR --output-dir models/glycocr_florence2
+
+echo "Training complete!"
