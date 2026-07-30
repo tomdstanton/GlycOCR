@@ -3,7 +3,9 @@
 import io
 
 from glycowork.motif.draw import GlycoDraw
-from PIL import Image
+import torch
+import torch.nn.functional as F
+import torchvision
 
 
 class IUPACSynthesizer:
@@ -28,14 +30,14 @@ class IUPACSynthesizer:
         self.output_size = target_size
         self.bg_color = bg_color
 
-    def synthesize(self, iupac_string: str) -> Image.Image:
+    def synthesize(self, iupac_string: str) -> torch.Tensor:
         """Synthesize a single SNFG PNG image from an IUPAC string.
 
         Args:
             iupac_string: IUPAC-condensed glycan string representation.
 
         Returns:
-            RGB PIL Image of size target_size with diagram padded on bg_color.
+            RGB PyTorch Tensor of shape (3, H, W) with diagram padded on bg_color.
 
         Raises:
             ValueError: If iupac_string is invalid, empty, or drawing fails.
@@ -57,14 +59,17 @@ class IUPACSynthesizer:
             )
 
         try:
-            raw_img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+            tensor_img = torchvision.io.decode_image(
+                torch.frombuffer(bytearray(png_bytes), dtype=torch.uint8), 
+                mode=torchvision.io.ImageReadMode.RGB
+            )
         except Exception as err:
             raise ValueError(
                 f"Failed to load rendered image for '{iupac_string}': {err}"
             ) from err
 
         target_w, target_h = self.target_size
-        w, h = raw_img.size
+        _, h, w = tensor_img.shape
 
         if w <= 0 or h <= 0:
             raise ValueError(
@@ -75,22 +80,31 @@ class IUPACSynthesizer:
         new_w = max(1, int(round(w * scale)))
         new_h = max(1, int(round(h * scale)))
 
-        resized_img = raw_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        # Convert to float for interpolation, add batch dim
+        float_img = tensor_img.float().unsqueeze(0)
+        
+        resized_img = F.interpolate(
+            float_img, size=(new_h, new_w), mode="bilinear", align_corners=False
+        ).squeeze(0).to(torch.uint8)
 
-        padded_img = Image.new("RGB", self.target_size, self.bg_color)
+        # Create padded background (C, H, W)
+        padded_img = torch.tensor(self.bg_color, dtype=torch.uint8).view(3, 1, 1).expand(3, target_h, target_w).clone()
+        
         paste_x = (target_w - new_w) // 2
         paste_y = (target_h - new_h) // 2
-        padded_img.paste(resized_img, (paste_x, paste_y))
+        
+        # Paste the resized image into the center
+        padded_img[:, paste_y:paste_y+new_h, paste_x:paste_x+new_w] = resized_img
 
         return padded_img
 
-    def synthesize_batch(self, iupac_strings: list[str]) -> list[Image.Image]:
+    def synthesize_batch(self, iupac_strings: list[str]) -> list[torch.Tensor]:
         """Synthesize a batch of SNFG PNG images from IUPAC strings.
 
         Args:
             iupac_strings: List of IUPAC-condensed glycan strings.
 
         Returns:
-            List of RGB PIL Images.
+            List of RGB PyTorch Tensors.
         """
         return [self.synthesize(s) for s in iupac_strings]

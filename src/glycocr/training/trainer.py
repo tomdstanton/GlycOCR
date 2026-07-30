@@ -12,12 +12,15 @@ from glycocr.models.model import GlycOCRModel
 class DataCollatorForGlycOCR:
     """Custom data collator to batch pixel_values, input_ids, and labels for GlycOCRModel."""
 
-    def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
         """Collate list of feature dictionaries into batched torch tensors."""
-        batch: dict[str, torch.Tensor] = {}
+        batch: dict[str, Any] = {}
 
         if not features:
             return batch
+
+        if "raw_images" in features[0]:
+            batch["raw_images"] = [f["raw_images"] for f in features]
 
         if "pixel_values" in features[0]:
             batch["pixel_values"] = torch.stack([f["pixel_values"] for f in features])
@@ -30,6 +33,41 @@ class DataCollatorForGlycOCR:
 
         return batch
 
+
+
+class _GlycOCRHFTrainer(Trainer):
+    def _prepare_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        inputs = super()._prepare_inputs(inputs)
+        
+        if "raw_images" in inputs:
+            import kornia
+            raw_images = inputs.pop("raw_images")
+            
+            # Since Florence-2 processor target size is typically 768 or 1024.
+            # Let's use 768x768 for now, as that's typical for Florence-2.
+            target_size = (768, 768)
+            
+            resized_images = []
+            for img in raw_images:
+                # img is (C, H, W) uint8 tensor on device
+                img_float = img.float() / 255.0
+                img_float = img_float.unsqueeze(0)
+                img_resized = kornia.geometry.transform.resize(
+                    img_float, target_size, interpolation='bilinear'
+                )
+                resized_images.append(img_resized.squeeze(0))
+                
+            pixel_values = torch.stack(resized_images)
+            
+            # Normalize with DaViT mean/std expected by Florence-2
+            device = pixel_values.device
+            mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, 3, 1, 1)
+            std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, 3, 1, 1)
+            
+            pixel_values = (pixel_values - mean) / std
+            inputs["pixel_values"] = pixel_values.to(next(self.model.parameters()).dtype)
+            
+        return inputs
 
 class GlycOCRTrainer:
     """Wrapper managing training and validation execution for GlycOCRModel."""
@@ -92,7 +130,7 @@ class GlycOCRTrainer:
 
         data_collator = DataCollatorForGlycOCR()
 
-        hf_trainer = Trainer(
+        hf_trainer = _GlycOCRHFTrainer(
             model=self.model,
             args=training_args,
             train_dataset=dataset_to_use,

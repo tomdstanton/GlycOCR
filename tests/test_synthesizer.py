@@ -1,7 +1,8 @@
 """Unit tests for synthetic SNFG diagram generator module."""
 
 import pytest
-from PIL import Image
+import torch
+import torchvision
 
 from glycocr.data.synthesizer import IUPACSynthesizer
 
@@ -22,13 +23,14 @@ def test_synthesizer_instantiation() -> None:
 
 
 def test_synthesizer_single_image() -> None:
-    """Verify IUPACSynthesizer.synthesize("Gal(b1-4)GlcNAc") returns RGB PIL Image with size (384, 384)."""
+    """Verify IUPACSynthesizer.synthesize("Gal(b1-4)GlcNAc") returns RGB PyTorch Tensor with shape (3, 384, 384)."""
     synth = IUPACSynthesizer(target_size=(384, 384))
-    img = synth.synthesize("Gal(b1-4)GlcNAc")
+    result = synth.synthesize("Gal(b1-4)GlcNAc")
 
-    assert isinstance(img, Image.Image)
-    assert img.mode == "RGB"
-    assert img.size == (384, 384)
+    assert isinstance(result, torch.Tensor)
+    assert result.shape == (3, 384, 384)
+    # Check if the result has the background color (e.g. at the edges)
+    assert torch.all(result[:, 0, 0] == torch.tensor([255, 255, 255], dtype=torch.uint8))
 
 
 def test_synthesizer_invalid_iupac_raises_value_error() -> None:
@@ -49,7 +51,7 @@ def test_synthesizer_invalid_iupac_raises_value_error() -> None:
 
 
 def test_synthesizer_batch() -> None:
-    """Verify synthesize_batch returns a list of RGB PIL Images of expected size."""
+    """Verify synthesize_batch returns a list of RGB PyTorch Tensors of expected size."""
     synth = IUPACSynthesizer(target_size=(384, 384))
     iupac_list = ["Gal(b1-4)GlcNAc", "Neu5Ac(a2-3)Gal(b1-4)Glc"]
     images = synth.synthesize_batch(iupac_list)
@@ -57,6 +59,5 @@ def test_synthesizer_batch() -> None:
     assert isinstance(images, list)
     assert len(images) == 2
     for img in images:
-        assert isinstance(img, Image.Image)
-        assert img.mode == "RGB"
-        assert img.size == (384, 384)
+        assert isinstance(img, torch.Tensor)
+        assert img.shape == (3, 384, 384)

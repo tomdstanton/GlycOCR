@@ -7,7 +7,6 @@ from typing import Any
 import torch
 import torch.nn as nn
 from peft import LoraConfig, PeftModel, TaskType, get_peft_model
-from PIL import Image
 from transformers import AutoModelForCausalLM, AutoProcessor
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_utils import PreTrainedModel
@@ -125,7 +124,7 @@ class GlycOCRModel(nn.Module):
 
     def generate(
         self,
-        image: Image.Image | torch.Tensor | str | Path,
+        image: torch.Tensor | str | Path,
         prompt: str = "<MORE_DETAILED_CAPTION>",
         max_new_tokens: int = 128,
     ) -> str:
@@ -133,13 +132,16 @@ class GlycOCRModel(nn.Module):
         device = next(self.model.parameters()).device
 
         if isinstance(image, (str, Path)):
-            img = Image.open(image).convert("RGB")
-            inputs = self.processor(text=prompt, images=img, return_tensors="pt")
-            pixel_values = inputs["pixel_values"].to(device=device, dtype=torch.float32)
-            input_ids = inputs["input_ids"].to(device=device)
-        elif isinstance(image, Image.Image):
-            img = image.convert("RGB")
-            inputs = self.processor(text=prompt, images=img, return_tensors="pt")
+            import torchvision
+            # Use fast binary loading to avoid Pillow
+            img_bytes = Path(image).read_bytes()
+            tensor = torchvision.io.decode_image(
+                torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8), 
+                mode=torchvision.io.ImageReadMode.RGB
+            )
+            # Pass numpy array to AutoProcessor (it expects HWC numpy array if not PIL)
+            np_img = tensor.permute(1, 2, 0).numpy()
+            inputs = self.processor(text=prompt, images=np_img, return_tensors="pt")
             pixel_values = inputs["pixel_values"].to(device=device, dtype=torch.float32)
             input_ids = inputs["input_ids"].to(device=device)
         elif isinstance(image, torch.Tensor):

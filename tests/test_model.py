@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import torch
 import torch.nn as nn
-from PIL import Image
 from torch.utils.data import DataLoader
 
 from glycocr.data.dataset import GlycOCRDataset
@@ -70,17 +69,17 @@ def test_model_instantiation() -> None:
         assert set(peft_config.target_modules) == {"q_proj", "v_proj"}
 
 def test_dataset_indexing() -> None:
-    img1 = Image.new("RGB", (100, 100), color="white")
-    img2 = Image.new("RGB", (200, 200), color="red")
+    img1 = torch.ones((3, 100, 100), dtype=torch.float32)
+    img2 = torch.ones((3, 200, 200), dtype=torch.float32)
     pairs = [(img1, "Gal(b1-4)Glc"), (img2, "Man(a1-3)Man")]
 
     dataset = GlycOCRDataset(items=pairs, max_length=128)
     assert len(dataset) == 2
 
     item0 = dataset[0]
-    assert set(item0.keys()) == {"pixel_values", "input_ids", "labels"}
-    assert item0["pixel_values"].shape == torch.Size([3, 768, 768])
-    assert item0["pixel_values"].dtype == torch.float32
+    assert set(item0.keys()) == {"raw_images", "input_ids", "labels"}
+    assert item0["raw_images"].shape == torch.Size([3, 100, 100])
+    assert item0["raw_images"].dtype == torch.float32
     assert item0["input_ids"].dim() == 1
     assert item0["labels"].shape == torch.Size([128])
     assert item0["labels"].dtype == torch.int64
@@ -88,8 +87,8 @@ def test_dataset_indexing() -> None:
     assert -100 in item0["labels"]
 
 def test_dataloader_and_forward_pass() -> None:
-    img1 = Image.new("RGB", (128, 128), color="blue")
-    img2 = Image.new("RGB", (128, 128), color="green")
+    img1 = torch.ones((3, 128, 128), dtype=torch.float32)
+    img2 = torch.ones((3, 128, 128), dtype=torch.float32)
     pairs = [(img1, "Gal(b1-4)GlcNAc"), (img2, "Neu5Ac(a2-3)Gal")]
 
     p_model, p_proc, p_peft, p_peft_cls, mock_processor = setup_mocks()
@@ -100,9 +99,14 @@ def test_dataloader_and_forward_pass() -> None:
         dataloader = DataLoader(dataset, batch_size=2)
 
         batch = next(iter(dataloader))
-        assert batch["pixel_values"].shape == torch.Size([2, 3, 768, 768])
+        assert batch["raw_images"][0].shape == torch.Size([3, 128, 128])
         assert batch["labels"].shape == torch.Size([2, 3])
 
+                # Manually prepare inputs simulating Trainer
+        from glycocr.training.trainer import _GlycOCRHFTrainer
+        trainer = _GlycOCRHFTrainer(model=model)
+        batch = trainer._prepare_inputs(batch)
+        
         outputs = model(
             pixel_values=batch["pixel_values"],
             input_ids=batch["input_ids"],
@@ -117,6 +121,8 @@ def test_single_sample_overfitting() -> None:
     synth = IUPACSynthesizer(target_size=(384, 384))
     iupac_target = "Gal(b1-4)GlcNAc"
     image = synth.synthesize(iupac_target)
+    
+    tensor_img = image
 
     p_model, p_proc, p_peft, p_peft_cls, mock_processor = setup_mocks()
     with p_model, p_proc as mock_proc, p_peft, p_peft_cls:
@@ -130,7 +136,14 @@ def test_single_sample_overfitting() -> None:
         sample = dataset[0]
 
         device = next(model.parameters()).device
-        pixel_values = sample["pixel_values"].unsqueeze(0).to(device)
+        pixel_values = sample["raw_images"].unsqueeze(0).to(device)
+        # Mock what trainer does
+        import kornia
+        pixel_values = kornia.geometry.transform.resize(pixel_values, (768, 768), interpolation='bilinear')
+        mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, 3, 1, 1)
+        std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, 3, 1, 1)
+        pixel_values = (pixel_values - mean) / std
+
         input_ids = sample["input_ids"].unsqueeze(0).to(device)
         labels = sample["labels"].unsqueeze(0).to(device)
 
@@ -153,12 +166,12 @@ def test_single_sample_overfitting() -> None:
 
         model.eval()
         with torch.no_grad():
-            prediction = model.generate(image)
+            prediction = model.generate(tensor_img)
 
         assert prediction == iupac_target, f"Expected '{iupac_target}', got '{prediction}'"
 
 def test_model_generate() -> None:
-    img = Image.new("RGB", (64, 64), color="yellow")
+    img = torch.ones((3, 64, 64), dtype=torch.float32)
     p_model, p_proc, p_peft, p_peft_cls, mock_processor = setup_mocks()
     with p_model, p_proc as mock_proc, p_peft, p_peft_cls:
         mock_proc.from_pretrained.return_value = mock_processor
@@ -194,22 +207,22 @@ def test_trainer_instantiation() -> None:
 def test_data_collator() -> None:
     collator = DataCollatorForGlycOCR()
     f1 = {
-        "pixel_values": torch.zeros((3, 768, 768)),
+        "raw_images": torch.zeros((3, 128, 128)),
         "input_ids": torch.tensor([1, 2, 3]),
         "labels": torch.tensor([4, 5, 6]),
     }
     f2 = {
-        "pixel_values": torch.ones((3, 768, 768)),
+        "raw_images": torch.ones((3, 128, 128)),
         "input_ids": torch.tensor([1, 2, 3]),
         "labels": torch.tensor([4, 5, 6]),
     }
     batch = collator([f1, f2])
-    assert batch["pixel_values"].shape == torch.Size([2, 3, 768, 768])
+    assert batch["raw_images"][0].shape == torch.Size([3, 128, 128])
     assert batch["input_ids"].shape == torch.Size([2, 3])
     assert batch["labels"].shape == torch.Size([2, 3])
 
 def test_hf_trainer_execution() -> None:
-    img = Image.new("RGB", (64, 64), color="white")
+    img = torch.ones((3, 64, 64), dtype=torch.float32)
     p_model, p_proc, p_peft, p_peft_cls, mock_processor = setup_mocks()
     with p_model, p_proc as mock_proc, p_peft, p_peft_cls, patch("glycocr.training.trainer.Trainer.train") as mock_train:
         mock_proc.from_pretrained.return_value = mock_processor

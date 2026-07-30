@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from PIL import Image
 from torch.utils.data import Dataset
 from transformers import AutoProcessor
 
@@ -39,9 +38,9 @@ class GlycOCRDataset(Dataset):
             self.str_lengths = self.index['str_lengths']
             self.num_samples = len(self.img_offsets)
             
-            # File handles for binary IO (opened per worker or lazily)
-            self._img_f = None
-            self._str_f = None
+            # Memory-mapped arrays for binary IO (initialized lazily per worker)
+            self._img_memmap = None
+            self._str_memmap = None
         else:
             self.num_samples = len(self.items)
 
@@ -58,22 +57,26 @@ class GlycOCRDataset(Dataset):
         return self.num_samples
 
     def _get_from_binary(self, idx: int) -> tuple[torch.Tensor, str]:
-        """Load image and IUPAC string from binary blob using SoA index."""
-        if self._img_f is None:
-            self._img_f = open(self.data_dir / "images.bin", "rb")
-            self._str_f = open(self.data_dir / "strings.bin", "rb")
+        """Load image and IUPAC string from binary blob using SoA index and np.memmap."""
+        if self._img_memmap is None:
+            import numpy as np
+            self._img_memmap = np.memmap(self.data_dir / "images.bin", dtype='uint8', mode='r')
+            self._str_memmap = np.memmap(self.data_dir / "strings.bin", dtype='uint8', mode='r')
 
         # Load string
-        self._str_f.seek(self.str_offsets[idx])
-        iupac_bytes = self._str_f.read(self.str_lengths[idx])
+        str_start = self.str_offsets[idx]
+        str_end = str_start + self.str_lengths[idx]
+        iupac_bytes = self._str_memmap[str_start:str_end].tobytes()
         iupac = iupac_bytes.decode('utf-8')
 
         # Load image bytes and decode with torchvision
-        self._img_f.seek(self.img_offsets[idx])
-        img_bytes = self._img_f.read(self.img_lengths[idx])
+        img_start = self.img_offsets[idx]
+        img_end = img_start + self.img_lengths[idx]
+        img_bytes = self._img_memmap[img_start:img_end].tobytes()
         
         # Convert bytes to tensor via torchvision
         import torchvision
+        import torch
         byte_tensor = torch.frombuffer(img_bytes, dtype=torch.uint8)
         image_tensor = torchvision.io.decode_image(byte_tensor, mode=torchvision.io.image.ImageReadMode.RGB)
         
@@ -83,44 +86,30 @@ class GlycOCRDataset(Dataset):
         """Retrieve and process a sample by index."""
         if self.data_dir:
             image_tensor, iupac = self._get_from_binary(idx)
-            
-            # Apply Kornia augmentations / resizing
-            import kornia
-            # image_tensor is (C, H, W) in uint8 [0, 255]
-            image_tensor = image_tensor.float() / 255.0 # (C, H, W) [0.0, 1.0]
-            
-            if self.target_size is not None:
-                # Kornia resize expects (B, C, H, W), so we add batch dim
-                image_tensor = image_tensor.unsqueeze(0)
-                image_tensor = kornia.geometry.transform.resize(
-                    image_tensor, self.target_size, interpolation='bilinear'
-                )
-                image_tensor = image_tensor.squeeze(0)
-                
-            # For Florence-2 processor, we need to pass a list of tensors or PIL images
-            # But the processor might expect a PIL image or numpy array. Wait, if we use torchvision,
-            # we can skip the processor's image transform and do it ourselves, but for simplicity
-            # we'll convert to numpy for the processor or handle it directly.
-            # Wait, Florence-2 processor accepts PIL Images or NumPy arrays or PyTorch Tensors!
-            # It expects RGB.
-            image = image_tensor
         else:
             image_item, iupac = self.items[idx]
             if isinstance(image_item, (str, Path)):
-                image = Image.open(image_item).convert("RGB")
-            elif isinstance(image_item, Image.Image):
-                image = image_item.convert("RGB")
+                import torchvision
+                img_bytes = Path(image_item).read_bytes()
+                image_tensor = torchvision.io.decode_image(
+                    torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8),
+                    mode=torchvision.io.image.ImageReadMode.RGB
+                )
+            elif isinstance(image_item, torch.Tensor):
+                image_tensor = image_item
+                if len(image_tensor.shape) == 4:
+                    image_tensor = image_tensor.squeeze(0)
             else:
-                image = Image.fromarray(image_item).convert("RGB")
-            
-            if self.target_size is not None:
-                image = image.resize(self.target_size)
+                import numpy as np
+                import kornia
+                np_img = np.array(image_item)
+                image_tensor = kornia.utils.image_to_tensor(np_img, keepdim=False).squeeze(0)
 
-        inputs = self.processor(
-            text=self.task_prompt, images=image, return_tensors="pt"
-        )
-        pixel_values = inputs["pixel_values"].squeeze(0).to(torch.float32)
-        input_ids = inputs["input_ids"].squeeze(0)
+        # Process the text using processor's tokenizer
+        input_ids = self.processor.tokenizer(
+            text=self.task_prompt,
+            return_tensors="pt"
+        ).input_ids.squeeze(0)
 
         labels = self.processor.tokenizer(
             text=iupac,
@@ -136,7 +125,7 @@ class GlycOCRDataset(Dataset):
             labels[labels == pad_id] = -100
 
         return {
-            "pixel_values": pixel_values,
+            "raw_images": image_tensor,
             "input_ids": input_ids,
             "labels": labels,
         }

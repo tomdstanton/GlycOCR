@@ -28,8 +28,7 @@ classifiers = [
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
-    "pydantic>=2.0.0",
-    "pillow>=10.0.0",
+    "orjson>=3.11.9",
 ]
 
 [project.optional-dependencies]
@@ -42,9 +41,11 @@ inference = [
     "torchvision>=0.15.0",
     "transformers>=4.40.0",
     "peft>=0.10.0",
+    "huggingface-hub>=0.23.0",
     "einops>=0.7.0,<0.8.0",
     "timm>=0.9.0",
     "numpy>=1.24.0",
+    "pymupdf>=1.20.0",
     "glycocr[data]",
 ]
 train = [

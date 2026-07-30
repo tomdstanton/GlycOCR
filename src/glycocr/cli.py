@@ -3,6 +3,7 @@
 from pathlib import Path
 import json
 import logging
+import importlib.metadata
 
 import typer
 from rich.console import Console
@@ -11,66 +12,107 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeEl
 
 console = Console()
 
+try:
+    _metadata = importlib.metadata.metadata("glycocr")
+    _summary = _metadata.get("Summary", "glycocr CLI")
+except Exception:
+    _summary = "glycocr CLI"
+
 app = typer.Typer(
     name="glycocr",
-    help="GlycOCR CLI converting SNFG diagrams to IUPAC-condensed strings",
+    help=_summary,
     rich_markup_mode="markdown",
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
-def setup_logging(verbose: bool):
-    level = logging.DEBUG if verbose else logging.INFO
+def version_callback(value: bool):
+    if value:
+        try:
+            version = importlib.metadata.version("glycocr")
+            console.print(f"[bold]glycocr v{version}[/bold] - {_summary}")
+        except Exception:
+            console.print("glycocr (unknown version)")
+        raise typer.Exit()
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        None, "--version", "-v", callback=version_callback, is_eager=True, help="Show the version and exit."
+    ),
+    verbose: int = typer.Option(
+        0, "--verbose", "-V", count=True, help="Increase verbosity level"
+    ),
+):
+    """Global configuration for the CLI."""
+    setup_logging(verbose)
+
+
+def setup_logging(verbose: int):
+    if verbose == 0:
+        level = logging.WARNING
+    elif verbose == 1:
+        level = logging.INFO
+    else:
+        level = logging.DEBUG
     logging.basicConfig(
         level=level,
         format="%(message)s",
         datefmt="[%X]",
         handlers=[RichHandler(console=console, rich_tracebacks=True, markup=True)]
     )
+    logging.getLogger("markdown_it").setLevel(logging.INFO)
 
 
 @app.command()
-def predict(
-    image: Path = typer.Option(
-        ..., "--image", "-i", help="Path to SNFG image or directory"
+def infer(
+    image: typer.FileBinaryRead = typer.Argument(
+        "-", help="Path to SNFG image or `-` for stdin"
     ),
-    output_json: Path | None = typer.Option(
-        None, "--output-json", "-o", help="Optional output JSON file path"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")
+    output_json: typer.FileTextWrite = typer.Argument(
+        "-", help="Output JSON file path or `-` for stdout"
+    )
 ) -> None:
-    """🧠 Predict IUPAC string for an input SNFG diagram image."""
-    setup_logging(verbose)
+    """:brain: Predict IUPAC string for an input SNFG diagram image."""
     from glycocr.inference.predictor import GlycOCR
     
-    with console.status(f"[bold green]Predicting for image: {image}..."):
+    with console.status("[bold green]Predicting for image..."):
         predictor = GlycOCR.load_pretrained()
         try:
-            result = predictor.predict(image)
+            import torch
+            import torchvision
+            img_bytes = image.read()
+            img_tensor = torch.frombuffer(img_bytes, dtype=torch.uint8)
+            img_tensor = torchvision.io.decode_image(img_tensor)
+            result = predictor.predict(img_tensor)
         except Exception as e:
-            console.print(f"[bold red]❌ Error predicting:[/bold red] {e}")
+            console.print(f"[bold red]:x: Error predicting:[/bold red] {e}")
             raise typer.Exit(1)
             
-    console.print(f"Result: [green]{result.iupac}[/green] (Valid: {result.is_valid})")
-    if output_json:
-        console.print(f"Output will be saved to: [cyan]{output_json}[/cyan]")
-        with open(output_json, "w") as f:
-            f.write(result.model_dump_json(exclude={'graph'}, indent=2))
-
+    
+    if output_json.name != "<stdout>":
+        console.print(f"Result: [green]{result.iupac}[/green] (Valid: {result.is_valid})")
+        console.print(f"Output saved to: [cyan]{output_json.name}[/cyan]")
+        
+    import orjson
+    from dataclasses import asdict
+    result_dict = asdict(result)
+    result_dict.pop('graph', None)
+    output_json.write(orjson.dumps(result_dict).decode("utf-8") + "\n")
 
 @app.command()
 def train(
-    data_dir: Path = typer.Option(
-        ..., "--data-dir", "-d", help="Path to directory containing binary dataset (images.bin, strings.bin, index.npz)"
+    data_dir: Path = typer.Argument(
+        ..., help="Path to directory containing binary dataset (images.bin, strings.bin, index.npz)"
     ),
-    output_dir: Path = typer.Option(
-        ..., "--output-dir", help="Output directory for trained model"
+    output_dir: Path = typer.Argument(
+        ..., help="Output directory for trained model"
     ),
     epochs: int = typer.Option(3, "--epochs", "-e", help="Number of epochs to train"),
     batch_size: int = typer.Option(4, "--batch-size", "-b", help="Batch size"),
-    lr: float = typer.Option(5e-4, "--lr", help="Learning rate"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")
+    lr: float = typer.Option(5e-4, "--lr", help="Learning rate")
 ) -> None:
     """📈 Train or fine-tune GlycOCR model on binary SoA dataset."""
-    setup_logging(verbose)
+    
     console.print(f"Training model with dataset directory: [cyan]{data_dir}[/cyan]")
     console.print(f"Model output directory: [cyan]{output_dir}[/cyan]")
     
@@ -101,26 +143,27 @@ def train(
     console.print(f"✅ Training complete. Model saved to [cyan]{output_dir}[/cyan]")
 
 
+
 @app.command()
 def synthesize(
-    iupac_list: Path = typer.Option(
-        ..., "--iupac-list", help="Path to text file containing IUPAC strings"
+    iupac_list: typer.FileText = typer.Argument(
+        "-", help="Path to text file containing IUPAC strings or `-` for stdin"
     ),
-    out_dir: Path = typer.Option(
-        ..., "--out-dir", help="Output directory for generated dataset"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")
+    out_dir: Path = typer.Argument(
+        ..., help="Output directory for generated dataset"
+    )
 ) -> None:
     """🧪 Synthesize clean SNFG images and save them as a binary SoA dataset."""
-    setup_logging(verbose)
+    
     console.print(f"Synthesizing dataset from list: [cyan]{iupac_list}[/cyan]")
     console.print(f"Output directory: [cyan]{out_dir}[/cyan]")
     from glycocr.data.synthesizer import IUPACSynthesizer
     import numpy as np
     import io
     
-    with open(iupac_list, 'r') as f:
-        iupacs = [line.strip() for line in f if line.strip()]
+    import sys
+    
+    iupacs = [line.strip() for line in iupac_list if line.strip()]
     
     synth = IUPACSynthesizer()
     out_path = Path(out_dir)
@@ -188,18 +231,18 @@ def synthesize(
     console.print("✅ Synthesis complete. Binary dataset created.")
 
 
+
 @app.command()
 def fetch_dataset(
-    output: Path = typer.Option(
-        Path("dataset_iupac.txt"), "--output", "-o", help="Output text file path"
+    output: typer.FileTextWrite = typer.Argument(
+        "-", help="Output text file path or `-` for stdout"
     ),
     synthetic_ratio: float = typer.Option(
         0.5, "--synthetic-ratio", help="Ratio of synthetic to real glycans to generate"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")
+    )
 ) -> None:
     """📥 Fetch real glycans and generate synthetic variants for training."""
-    setup_logging(verbose)
+    
     import random
     import re
     try:
@@ -281,18 +324,30 @@ def fetch_dataset(
     hybrid_dataset = list(set(valid_real_glycans + synthetic_glycans))
     random.shuffle(hybrid_dataset)
     
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with open(output, 'w') as f:
-        for g in hybrid_dataset:
-            f.write(f"{g}\n")
+    if output.name != "<stdout>":
+        Path(output.name).parent.mkdir(parents=True, exist_ok=True)
+        
+    for g in hybrid_dataset:
+        output.write(f"{g}\n")
             
-    console.print(f"✅ [green]Successfully saved {len(hybrid_dataset)} total IUPAC strings to {output}[/green]")
+    if output.name != "<stdout>":
+        console.print(f"✅ [green]Successfully saved {len(hybrid_dataset)} total IUPAC strings to {output.name}[/green]")
+
+@app.command()
+def deploy(
+    repo_id: str = typer.Argument(..., help="Target Hugging Face repository ID (e.g. username/glycocr)"),
+    model_path: str = typer.Argument(..., help="Path to the model file or directory"),
+    token: str = typer.Option(None, help="HF API token. Falls back to HF_TOKEN env var if not set.")
+):
+    """:rocket: Deploy a trained model to the Hugging Face Hub."""
+    from glycocr.deploy import deploy_to_huggingface
+
+    try:
+        with console.status(f"[bold green]Deploying {model_path} to {repo_id}..."):
+            deploy_to_huggingface(repo_id=repo_id, model_path=model_path, token=token)
+        console.print(":white_check_mark: Deployment complete!")
+    except Exception as e:
+        console.print(f"[bold red]:x: Deployment failed:[/bold red] {e}")
+        raise typer.Exit(1)
 
 
-def main() -> None:
-    """Entrypoint function for CLI execution."""
-    app()
-
-
-if __name__ == "__main__":
-    main()

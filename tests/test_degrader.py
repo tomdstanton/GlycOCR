@@ -19,17 +19,11 @@ def test_degrader_instantiation() -> None:
     assert custom_degrader.seed == 42
 
 
-def _pil_to_tensor(img: Image.Image) -> torch.Tensor:
-    np_img = np.array(img.convert("RGB"))
-    tensor = kornia.utils.image_to_tensor(np_img, keepdim=False) / 255.0
-    return tensor.squeeze(0)  # C, H, W
-
-
 def test_degrader_degrade_output_type_and_shape() -> None:
     """Verify SNFGDegrader.degrade(clean_tensor) produces valid Tensor of equal size."""
     synth = IUPACSynthesizer(target_size=(384, 384))
     clean_img = synth.synthesize("Gal(b1-4)GlcNAc")
-    clean_tensor = _pil_to_tensor(clean_img)
+    clean_tensor = clean_img.float() / 255.0
 
     degrader = SNFGDegrader(p=1.0)
     degraded_tensor = degrader.degrade(clean_tensor)
@@ -42,7 +36,7 @@ def test_degrader_p_zero() -> None:
     """Verify SNFGDegrader(p=0.0) produces identical tensor."""
     synth = IUPACSynthesizer(target_size=(384, 384))
     clean_img = synth.synthesize("Gal(b1-4)GlcNAc")
-    clean_tensor = _pil_to_tensor(clean_img)
+    clean_tensor = clean_img.float() / 255.0
 
     degrader = SNFGDegrader(p=0.0)
     degraded_tensor = degrader.degrade(clean_tensor)
@@ -54,7 +48,7 @@ def test_degrader_tensor_and_array_conversion() -> None:
     """Verify output tensor converts back to expected shapes."""
     synth = IUPACSynthesizer(target_size=(384, 384))
     clean_img = synth.synthesize("Gal(b1-4)GlcNAc")
-    clean_tensor = _pil_to_tensor(clean_img)
+    clean_tensor = clean_img.float() / 255.0
 
     degrader = SNFGDegrader(p=0.8)
     degraded_tensor = degrader.degrade(clean_tensor)

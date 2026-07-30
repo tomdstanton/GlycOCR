@@ -67,3 +67,13 @@ train:
 # 4. Predict an IUPAC string from an SNFG image
 predict IMAGE_PATH:
     uv run glycocr predict --image {{IMAGE_PATH}} --verbose
+
+# 5. Scan a PDF for SNFG images and stream out IUPAC strings
+scan PDF_PATH OUTPUT_FILE="":
+    uv run glycocr scan --pdf {{PDF_PATH}} {{if OUTPUT_FILE != "" { "--output " + OUTPUT_FILE } else { "" }}} --verbose
+
+# --- HPC Scripts ---
+
+# Submit training job to Monash MASSIVE M3 SLURM cluster
+submit-train:
+    sbatch train.slurm
