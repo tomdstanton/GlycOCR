@@ -11,14 +11,14 @@ default:
 clean:
     rm -rf site
     find . -type d -name "__pycache__" -exec rm -rf {} +
-    find . -type d -name ".pytest_cache" -exec rm -rf {} +
+    find . -type d -name ".karva_cache" -exec rm -rf {} +
 
 install: clean
     uv sync
 
 # Run the test suite
 test: install
-    uv run pytest tests/
+    uv run karva test tests/
 
 # Format all Python code
 fmt:

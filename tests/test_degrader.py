@@ -1,9 +1,6 @@
 """Unit tests for image degradation engine module."""
 
-import numpy as np
 import torch
-import kornia
-from PIL import Image
 
 from glycocr.data.degrader import SNFGDegrader
 from glycocr.data.synthesizer import IUPACSynthesizer

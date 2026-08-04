@@ -30,10 +30,13 @@ uv sync --extra train
 # 4. Synthesize the dataset (if not already synthesized)
 # We synthesize a large dataset for training. 
 # You may want to adjust the size depending on your compute limits.
-DATA_DIR="data/training_set"
+DATA_DIR="/scratch/kr58/tom/glycocr_data"
 if [ ! -d "$DATA_DIR" ]; then
+    echo "Fetching and generating IUPAC sequences..."
+    uv run glycocr fetch-dataset iupacs.txt --synthetic-ratio 1.0
+    
     echo "Synthesizing training data..."
-    uv run glycocr synthesize --out-dir $DATA_DIR --size 50000
+    uv run glycocr synthesize iupacs.txt $DATA_DIR
 else
     echo "Training data already exists at $DATA_DIR"
 fi

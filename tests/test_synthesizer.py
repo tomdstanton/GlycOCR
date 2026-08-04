@@ -1,8 +1,7 @@
 """Unit tests for synthetic SNFG diagram generator module."""
 
-import pytest
+import karva
 import torch
-import torchvision
 
 from glycocr.data.synthesizer import IUPACSynthesizer
 
@@ -37,16 +36,16 @@ def test_synthesizer_invalid_iupac_raises_value_error() -> None:
     """Verify invalid IUPAC string raises ValueError."""
     synth = IUPACSynthesizer()
 
-    with pytest.raises(ValueError):
+    with karva.raises(ValueError):
         synth.synthesize("")
 
-    with pytest.raises(ValueError):
+    with karva.raises(ValueError):
         synth.synthesize("  ")
 
-    with pytest.raises(ValueError):
+    with karva.raises(ValueError):
         synth.synthesize("][")
 
-    with pytest.raises(ValueError):
+    with karva.raises(ValueError):
         synth.synthesize("[[]]")
 
 

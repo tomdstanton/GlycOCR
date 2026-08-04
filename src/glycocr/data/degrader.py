@@ -3,9 +3,9 @@
 import random
 
 import kornia as K
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 class SNFGDegrader(nn.Module):
@@ -30,12 +30,10 @@ class SNFGDegrader(nn.Module):
             # Blur / Noise
             K.augmentation.RandomGaussianNoise(mean=0.0, std=0.2, p=0.2),
             K.augmentation.RandomGaussianBlur((5, 5), (1.0, 3.0), p=0.2),
-            K.augmentation.RandomMotionBlur(3, 35., 0.5, p=0.2),
+            K.augmentation.RandomMotionBlur(3, 35.0, 0.5, p=0.2),
             # Color / Contrast
             K.augmentation.RandomGrayscale(p=0.2),
-            K.augmentation.ColorJitter(
-                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3
-            ),
+            K.augmentation.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
             # Affine Transform
             K.augmentation.RandomAffine(
                 degrees=(-10.0, 10.0),
@@ -44,7 +42,7 @@ class SNFGDegrader(nn.Module):
                 shear=(-5.0, 5.0),
                 p=0.5,
             ),
-            random_apply=True
+            random_apply=True,
         )
 
     def degrade(self, image: torch.Tensor) -> torch.Tensor:
@@ -58,14 +56,14 @@ class SNFGDegrader(nn.Module):
         """
         if random.random() > self.p:
             return image
-            
+
         is_unbatched = image.dim() == 3
         if is_unbatched:
             image = image.unsqueeze(0)
-            
+
         augmented = self.pipeline(image)
-        
+
         if is_unbatched:
             augmented = augmented.squeeze(0)
-            
+
         return augmented

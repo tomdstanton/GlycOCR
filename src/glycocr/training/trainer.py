@@ -34,56 +34,55 @@ class DataCollatorForGlycOCR:
         return batch
 
 
-
 class _GlycOCRHFTrainer(Trainer):
     def _prepare_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
         inputs = super()._prepare_inputs(inputs)
-        
+
         if "raw_images" in inputs:
             import kornia
+
             raw_images = inputs.pop("raw_images")
-            
+
             # Since Florence-2 processor target size is typically 768 or 1024.
             # Let's use 768x768 for now, as that's typical for Florence-2.
             target_size = (768, 768)
-            
+
             resized_images = []
             for img in raw_images:
                 # img is (C, H, W) uint8 tensor on device
                 img_float = img.float() / 255.0
                 img_float = img_float.unsqueeze(0)
-                img_resized = kornia.geometry.transform.resize(
-                    img_float, target_size, interpolation='bilinear'
-                )
+                img_resized = kornia.geometry.transform.resize(img_float, target_size, interpolation="bilinear")
                 resized_images.append(img_resized.squeeze(0))
-                
+
             pixel_values = torch.stack(resized_images)
-            
+
             # Normalize with DaViT mean/std expected by Florence-2
             device = pixel_values.device
             mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, 3, 1, 1)
             std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, 3, 1, 1)
-            
+
             pixel_values = (pixel_values - mean) / std
-            inputs["pixel_values"] = pixel_values.to(next(self.model.parameters()).dtype)
-            
+            inputs["pixel_values"] = pixel_values.to(next(self.model.parameters()).dtype)  # type: ignore
+
         return inputs
+
 
 class GlycOCRTrainer:
     """Wrapper managing training and validation execution for GlycOCRModel."""
 
     def __init__(
         self,
-        model: GlycOCRModel | Any,
-        train_dataset: GlycOCRDataset | Any | None = None,
-        eval_dataset: GlycOCRDataset | Any | None = None,
+        model: GlycOCRModel,
+        train_dataset: GlycOCRDataset | None = None,
+        eval_dataset: GlycOCRDataset | None = None,
         output_dir: str = "./output",
         learning_rate: float = 5e-4,
         num_train_epochs: int = 1,
         per_device_train_batch_size: int = 1,
         fp16: bool = False,
         gradient_accumulation_steps: int = 1,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize trainer parameters and output configuration."""
         self.model = model
@@ -99,16 +98,12 @@ class GlycOCRTrainer:
 
     def train(
         self,
-        train_dataset: GlycOCRDataset | Any | None = None,
-        eval_dataset: GlycOCRDataset | Any | None = None,
-    ) -> Any:
+        train_dataset: GlycOCRDataset | None = None,
+        eval_dataset: GlycOCRDataset | None = None,
+    ) -> Any:  # noqa: ANN401
         """Execute model training loop on provided dataset."""
-        dataset_to_use = (
-            train_dataset if train_dataset is not None else self.train_dataset
-        )
-        eval_to_use = (
-            eval_dataset if eval_dataset is not None else self.eval_dataset
-        )
+        dataset_to_use = train_dataset if train_dataset is not None else self.train_dataset
+        eval_to_use = eval_dataset if eval_dataset is not None else self.eval_dataset
 
         if dataset_to_use is None:
             raise ValueError("No training dataset provided to GlycOCRTrainer.")

@@ -1,14 +1,17 @@
 """Output validation and parsing layer leveraging glycowork."""
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 if TYPE_CHECKING:
-    import networkx as nx
+    pass
 
 from dataclasses import dataclass
+
 
 @dataclass(frozen=True, slots=True)
 class GlycanParseResult:
     """Structured output for parsed and validated IUPAC glycan strings."""
+
     iupac: str
     is_valid: bool
     error: str | None = None
@@ -23,7 +26,7 @@ class GlycOCRParser:
         try:
             from glycowork.motif.graph import glycan_to_nxGraph
             from glycowork.motif.processing import canonicalize_iupac
-            
+
             canonical = canonicalize_iupac(iupac_string)
             glycan_to_nxGraph(canonical)
             return True
@@ -35,7 +38,7 @@ class GlycOCRParser:
         try:
             from glycowork.motif.graph import glycan_to_nxGraph
             from glycowork.motif.processing import canonicalize_iupac
-            
+
             canonical = canonicalize_iupac(iupac_string)
             graph = glycan_to_nxGraph(canonical)
             return GlycanParseResult(

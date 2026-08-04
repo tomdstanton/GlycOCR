@@ -1,11 +1,8 @@
 """Synthetic SNFG diagram renderer for IUPAC glycan strings."""
 
-import io
-
-from glycowork.motif.draw import GlycoDraw
 import torch
-import torch.nn.functional as F
 import torchvision
+from glycowork.motif.draw import GlycoDraw
 
 
 class IUPACSynthesizer:
@@ -49,52 +46,54 @@ class IUPACSynthesizer:
             drawing = GlycoDraw(iupac_string, suppress=True)
             png_bytes = drawing._repr_png_()
         except Exception as err:
-            raise ValueError(
-                f"Failed to render IUPAC string '{iupac_string}': {err}"
-            ) from err
+            raise ValueError(f"Failed to render IUPAC string '{iupac_string}': {err}") from err
 
         if not png_bytes:
-            raise ValueError(
-                f"Failed to generate PNG bytes for IUPAC string: '{iupac_string}'"
-            )
+            raise ValueError(f"Failed to generate PNG bytes for IUPAC string: '{iupac_string}'")
 
         try:
             tensor_img = torchvision.io.decode_image(
-                torch.frombuffer(bytearray(png_bytes), dtype=torch.uint8), 
-                mode=torchvision.io.ImageReadMode.RGB
+                torch.frombuffer(bytearray(png_bytes), dtype=torch.uint8), mode=torchvision.io.ImageReadMode.RGB
             )
         except Exception as err:
-            raise ValueError(
-                f"Failed to load rendered image for '{iupac_string}': {err}"
-            ) from err
+            raise ValueError(f"Failed to load rendered image for '{iupac_string}': {err}") from err
 
         target_w, target_h = self.target_size
         _, h, w = tensor_img.shape
 
         if w <= 0 or h <= 0:
-            raise ValueError(
-                f"Invalid image dimensions for rendered IUPAC string '{iupac_string}': {w}x{h}"
-            )
+            raise ValueError(f"Invalid image dimensions for rendered IUPAC string '{iupac_string}': {w}x{h}")
 
         scale = min(target_w / w, target_h / h)
         new_w = max(1, int(round(w * scale)))
         new_h = max(1, int(round(h * scale)))
 
-        # Convert to float for interpolation, add batch dim
-        float_img = tensor_img.float().unsqueeze(0)
-        
-        resized_img = F.interpolate(
-            float_img, size=(new_h, new_w), mode="bilinear", align_corners=False
-        ).squeeze(0).to(torch.uint8)
+        float_img = tensor_img.float().unsqueeze(0) / 255.0
 
-        # Create padded background (C, H, W)
-        padded_img = torch.tensor(self.bg_color, dtype=torch.uint8).view(3, 1, 1).expand(3, target_h, target_w).clone()
-        
-        paste_x = (target_w - new_w) // 2
-        paste_y = (target_h - new_h) // 2
-        
-        # Paste the resized image into the center
-        padded_img[:, paste_y:paste_y+new_h, paste_x:paste_x+new_w] = resized_img
+        import kornia.geometry.transform as kg
+
+        # Kornia resize
+        resized_img = kg.resize(float_img, size=(new_h, new_w), interpolation="bilinear", antialias=True)
+
+        # Calculate padding needed to reach target_size
+        pad_bottom = target_h - new_h
+        pad_right = target_w - new_w
+
+        # Kornia pad requires padding as (left, right, top, bottom)
+        pad_left = pad_right // 2
+        pad_right = pad_right - pad_left
+        pad_top = pad_bottom // 2
+        pad_bottom = pad_bottom - pad_top
+
+        padded_img = torch.nn.functional.pad(
+            resized_img,
+            pad=(pad_left, pad_right, pad_top, pad_bottom),
+            mode="constant",
+            value=1.0,  # White background in [0,1]
+        )
+
+        # Convert back to uint8 tensor in [0, 255]
+        padded_img = (padded_img.squeeze(0) * 255.0).to(torch.uint8)
 
         return padded_img
 

@@ -16,28 +16,24 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 def apply_florence2_patches() -> None:
     """Apply runtime monkey-patches for Florence-2 compatibility with recent transformers versions."""
     if not hasattr(PretrainedConfig, "forced_bos_token_id"):
-        PretrainedConfig.forced_bos_token_id = None
+        PretrainedConfig.forced_bos_token_id = None  # type: ignore
 
     if not hasattr(PreTrainedTokenizerBase, "additional_special_tokens"):
-        PreTrainedTokenizerBase.additional_special_tokens = property(
+        PreTrainedTokenizerBase.additional_special_tokens = property(  # type: ignore
             lambda self: getattr(self, "_additional_special_tokens", [])
         )
 
     orig_sdpa_can_dispatch = getattr(PreTrainedModel, "_sdpa_can_dispatch", None)
-    if orig_sdpa_can_dispatch is not None and not getattr(
-        PreTrainedModel, "_florence2_patched", False
-    ):
+    if orig_sdpa_can_dispatch is not None and not getattr(PreTrainedModel, "_florence2_patched", False):
 
-        def patched_sdpa_can_dispatch(
-            self: PreTrainedModel, is_init_check: bool = False
-        ) -> bool:
+        def patched_sdpa_can_dispatch(self: PreTrainedModel, is_init_check: bool = False) -> bool:
             try:
                 return orig_sdpa_can_dispatch(self, is_init_check=is_init_check)
             except AttributeError:
                 return False
 
         PreTrainedModel._sdpa_can_dispatch = patched_sdpa_can_dispatch
-        PreTrainedModel._florence2_patched = True
+        PreTrainedModel._florence2_patched = True  # type: ignore
 
 
 class GlycOCRModel(nn.Module):
@@ -58,28 +54,17 @@ class GlycOCRModel(nn.Module):
         self.model_name = model_name
         self.lora_r = lora_r
         self.lora_alpha = lora_alpha
-        self.target_modules = (
-            list(target_modules) if target_modules is not None else ["q_proj", "v_proj"]
-        )
+        self.target_modules = list(target_modules) if target_modules is not None else ["q_proj", "v_proj"]
 
-        self.processor = AutoProcessor.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-        base_model = AutoModelForCausalLM.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-        base_model = base_model.to(torch.float32)
+        self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+        base_model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+        base_model = base_model.to(torch.float32)  # type: ignore
 
-        if (
-            not hasattr(base_model, "generation_config")
-            or base_model.generation_config is None
-        ):
+        if not hasattr(base_model, "generation_config") or base_model.generation_config is None:
             try:
                 from transformers import GenerationConfig
 
-                base_model.generation_config = GenerationConfig.from_model_config(
-                    base_model.config
-                )
+                base_model.generation_config = GenerationConfig.from_model_config(base_model.config)
             except Exception:
                 pass
 
@@ -102,8 +87,8 @@ class GlycOCRModel(nn.Module):
         pixel_values: torch.Tensor,
         input_ids: torch.Tensor | None = None,
         labels: torch.Tensor | None = None,
-        **kwargs: Any,
-    ) -> Any:
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Any:  # noqa: ANN401
         """Forward pass for model training and loss calculation."""
         kwargs.pop("num_items_in_batch", None)
         if input_ids is None:
@@ -133,11 +118,11 @@ class GlycOCRModel(nn.Module):
 
         if isinstance(image, (str, Path)):
             import torchvision
+
             # Use fast binary loading to avoid Pillow
             img_bytes = Path(image).read_bytes()
             tensor = torchvision.io.decode_image(
-                torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8), 
-                mode=torchvision.io.ImageReadMode.RGB
+                torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8), mode=torchvision.io.ImageReadMode.RGB
             )
             # Pass numpy array to AutoProcessor (it expects HWC numpy array if not PIL)
             np_img = tensor.permute(1, 2, 0).numpy()
@@ -161,16 +146,14 @@ class GlycOCRModel(nn.Module):
             use_cache=False,
         )
 
-        generated_text = self.processor.batch_decode(
-            generated_ids, skip_special_tokens=True
-        )[0]
+        generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return generated_text.strip()
 
     def save_pretrained(self, save_directory: str | Path) -> None:
         """Save PEFT adapters and processor to directory."""
         save_path = Path(save_directory)
         save_path.mkdir(parents=True, exist_ok=True)
-        self.model.save_pretrained(save_path)
+        self.model.save_pretrained(str(save_path))
         self.processor.save_pretrained(save_path)
 
     @classmethod
@@ -190,25 +173,16 @@ class GlycOCRModel(nn.Module):
         try:
             processor = AutoProcessor.from_pretrained(load_path, trust_remote_code=True)
         except Exception:
-            processor = AutoProcessor.from_pretrained(
-                model_name, trust_remote_code=True
-            )
+            processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
 
-        base_model = AutoModelForCausalLM.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-        base_model = base_model.to(torch.float32)
+        base_model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+        base_model = base_model.to(torch.float32)  # type: ignore
 
-        if (
-            not hasattr(base_model, "generation_config")
-            or base_model.generation_config is None
-        ):
+        if not hasattr(base_model, "generation_config") or base_model.generation_config is None:
             try:
                 from transformers import GenerationConfig
 
-                base_model.generation_config = GenerationConfig.from_model_config(
-                    base_model.config
-                )
+                base_model.generation_config = GenerationConfig.from_model_config(base_model.config)
             except Exception:
                 pass
 
@@ -216,14 +190,10 @@ class GlycOCRModel(nn.Module):
 
         instance.model_name = model_name
         peft_cfg = getattr(peft_model, "peft_config", {})
-        default_cfg = (
-            peft_cfg.get("default", None) if isinstance(peft_cfg, dict) else None
-        )
+        default_cfg = peft_cfg.get("default", None) if isinstance(peft_cfg, dict) else None
         instance.lora_r = getattr(default_cfg, "r", 8)
         instance.lora_alpha = getattr(default_cfg, "lora_alpha", 16)
-        instance.target_modules = list(
-            getattr(default_cfg, "target_modules", ["q_proj", "v_proj"])
-        )
+        instance.target_modules = list(getattr(default_cfg, "target_modules", ["q_proj", "v_proj"]))
         instance.processor = processor
         instance.model = peft_model
 

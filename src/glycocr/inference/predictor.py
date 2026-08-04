@@ -1,10 +1,11 @@
 """High-level Python inference API for predicting IUPAC strings from SNFG diagrams."""
 
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import torch
+
     from glycocr.models.model import GlycOCRModel
     from glycocr.models.parser import GlycanParseResult
 
@@ -15,15 +16,18 @@ class GlycOCR:
     def __init__(self, model: "GlycOCRModel | None" = None) -> None:
         """Initialize GlycOCR predictor with optional pre-instantiated model instance."""
         self.model = model
-        
+
         from glycocr.models.parser import GlycOCRParser
+
         self.parser = GlycOCRParser()
 
     @classmethod
-    def load_pretrained(cls, model_path: str | Path | None = None, device: "str | torch.device | None" = None) -> "GlycOCR":
+    def load_pretrained(
+        cls, model_path: str | Path | None = None, device: "str | torch.device | None" = None
+    ) -> "GlycOCR":
         """Load pretrained GlycOCR model weights and return predictor instance."""
         from glycocr.models.model import GlycOCRModel
-        
+
         if model_path is None:
             model = GlycOCRModel(device=device)
         else:
@@ -34,7 +38,7 @@ class GlycOCR:
         """Predict IUPAC string and validation status for a given input image."""
         if self.model is None:
             raise ValueError("Model is not loaded. Use load_pretrained() or pass a model to __init__.")
-        
+
         iupac_string = self.model.generate(image)
         parsed = self.parser.parse(iupac_string)
         return parsed
