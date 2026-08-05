@@ -81,7 +81,7 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         import torch
         import torchvision
 
-        byte_tensor = torch.frombuffer(img_bytes, dtype=torch.uint8)
+        byte_tensor = torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8)
         image_tensor = torchvision.io.decode_image(byte_tensor, mode=torchvision.io.image.ImageReadMode.RGB)
 
         return image_tensor, iupac

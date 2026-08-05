@@ -110,6 +110,15 @@ def train(
     lr: float = typer.Option(5e-4, "--lr", help="Learning rate"),
 ) -> None:
     """📈 Train or fine-tune GlycOCR model on binary SoA dataset."""
+    import warnings
+
+    from transformers.utils import logging as hf_logging
+
+    warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
+    warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
+    warnings.filterwarnings("ignore", message=".*image_processor_class = 'CLIPImageProcessor'.*")
+    hf_logging.set_verbosity_error()
+
     console.print(f"Training model with dataset directory: [cyan]{data_dir}[/cyan]")
     console.print(f"Model output directory: [cyan]{output_dir}[/cyan]")
 
