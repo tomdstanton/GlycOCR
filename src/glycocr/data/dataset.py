@@ -21,6 +21,7 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         task_prompt: str = "<MORE_DETAILED_CAPTION>",
         max_length: int = 128,
         target_size: tuple[int, int] | None = (768, 768),
+        degrade_prob: float = 0.5,
     ) -> None:
         """Initialize dataset with image-IUPAC pairs or binary dataset directory."""
         self.data_dir = Path(data_dir) if data_dir else None
@@ -28,6 +29,10 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         self.task_prompt = task_prompt
         self.max_length = max_length
         self.target_size = target_size
+
+        from glycocr.data.degrader import SNFGDegrader
+
+        self.degrader = SNFGDegrader(p=degrade_prob)
 
         if self.data_dir and self.data_dir.exists():
             import numpy as np
@@ -110,6 +115,9 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
 
                 np_img = np.array(image_item)
                 image_tensor = kornia.utils.image_to_tensor(np_img, keepdim=False).squeeze(0)
+
+        # Apply dynamic degradations directly on the image tensor during fetch
+        image_tensor = self.degrader.degrade(image_tensor)
 
         # Process the text using processor's tokenizer
         input_ids = self.processor.tokenizer(text=self.task_prompt, return_tensors="pt").input_ids.squeeze(0)
