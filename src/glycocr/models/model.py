@@ -116,6 +116,21 @@ class GlycOCRModel(nn.Module):
         """Generate IUPAC text prediction given an input SNFG image."""
         device = next(self.model.parameters()).device
 
+        def _pad_to_square(img: torch.Tensor) -> torch.Tensor:
+            """Pad a (C, H, W) uint8 tensor to a square using white (255) background."""
+            _, h, w = img.shape
+            if h == w:
+                return img
+            size = max(h, w)
+            pad_bottom = size - h
+            pad_right = size - w
+            return torch.nn.functional.pad(
+                img,
+                pad=(pad_right // 2, pad_right - (pad_right // 2), pad_bottom // 2, pad_bottom - (pad_bottom // 2)),
+                mode="constant",
+                value=255,
+            )
+
         if isinstance(image, (str, Path)):
             import torchvision
 
@@ -124,17 +139,26 @@ class GlycOCRModel(nn.Module):
             tensor = torchvision.io.decode_image(
                 torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8), mode=torchvision.io.ImageReadMode.RGB
             )
+            tensor = _pad_to_square(tensor)
             # Pass numpy array to AutoProcessor (it expects HWC numpy array if not PIL)
             np_img = tensor.permute(1, 2, 0).numpy()
             inputs = self.processor(text=prompt, images=np_img, return_tensors="pt")
             pixel_values = inputs["pixel_values"].to(device=device, dtype=torch.float32)
             input_ids = inputs["input_ids"].to(device=device)
         elif isinstance(image, torch.Tensor):
-            pixel_values = image.to(device=device, dtype=torch.float32)
-            if pixel_values.dim() == 3:
-                pixel_values = pixel_values.unsqueeze(0)
-            prompt_inputs = self.processor.tokenizer(text=prompt, return_tensors="pt")
-            input_ids = prompt_inputs.input_ids.to(device=device)
+            if image.dtype == torch.uint8:
+                img_sq = image.squeeze(0) if image.dim() == 4 else image
+                img_sq = _pad_to_square(img_sq)
+                np_img = img_sq.cpu().permute(1, 2, 0).numpy()
+                inputs = self.processor(text=prompt, images=np_img, return_tensors="pt")
+                pixel_values = inputs["pixel_values"].to(device=device, dtype=torch.float32)
+                input_ids = inputs["input_ids"].to(device=device)
+            else:
+                pixel_values = image.to(device=device, dtype=torch.float32)
+                if pixel_values.dim() == 3:
+                    pixel_values = pixel_values.unsqueeze(0)
+                prompt_inputs = self.processor.tokenizer(text=prompt, return_tensors="pt")
+                input_ids = prompt_inputs.input_ids.to(device=device)
         else:
             raise TypeError(f"Unsupported image type: {type(image)}")
 

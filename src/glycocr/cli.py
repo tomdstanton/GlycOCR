@@ -70,6 +70,15 @@ def infer(
     output_json: typer.FileTextWrite = typer.Argument("-", help="Output JSON file path or `-` for stdout"),
 ) -> None:
     """:brain: Predict IUPAC string for an input SNFG diagram image."""
+    import warnings
+
+    from transformers.utils import logging as hf_logging
+
+    warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
+    warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
+    warnings.filterwarnings("ignore", message=".*image_processor_class = 'CLIPImageProcessor'.*")
+    hf_logging.set_verbosity_error()
+
     from glycocr.inference.predictor import GlycOCR
 
     with console.status("[bold green]Predicting for image..."):
@@ -79,7 +88,7 @@ def infer(
             import torchvision
 
             img_bytes = image.read()
-            img_tensor = torch.frombuffer(img_bytes, dtype=torch.uint8)
+            img_tensor = torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8)
             img_tensor = torchvision.io.decode_image(img_tensor)
             result = predictor.predict(img_tensor)
         except Exception as e:

@@ -26,7 +26,17 @@ class GlycOCR:
         cls, model_path: str | Path | None = None, device: "str | torch.device | None" = None
     ) -> "GlycOCR":
         """Load pretrained GlycOCR model weights and return predictor instance."""
+        import torch
+
         from glycocr.models.model import GlycOCRModel
+
+        if device is None:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
 
         if model_path is None:
             model = GlycOCRModel(device=device)

@@ -18,7 +18,7 @@ install: clean
 
 # Run the test suite
 test: install
-    uv run karva test tests/
+    uvx karva test tests/
 
 # Format all Python code
 fmt:
@@ -71,9 +71,3 @@ predict IMAGE_PATH:
 # 5. Scan a PDF for SNFG images and stream out IUPAC strings
 scan PDF_PATH OUTPUT_FILE="":
     uv run glycocr scan --pdf {{PDF_PATH}} {{if OUTPUT_FILE != "" { "--output " + OUTPUT_FILE } else { "" }}} --verbose
-
-# --- HPC Scripts ---
-
-# Submit training job to Monash MASSIVE M3 SLURM cluster
-submit-train:
-    sbatch train.slurm

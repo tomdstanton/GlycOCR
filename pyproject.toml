@@ -88,9 +88,6 @@ version-file = "src/glycocr/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/glycocr"]
 
-[tool.pytest.ini_options]
-addopts = "--doctest-modules"
-testpaths = ["tests", "src"]
 
 [tool.ruff]
 line-length = 120
