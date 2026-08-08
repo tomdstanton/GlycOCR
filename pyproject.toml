@@ -29,6 +29,7 @@ dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "orjson>=3.11.9",
+    "peft>=0.12.0",
 ]
 
 [project.optional-dependencies]
@@ -39,7 +40,7 @@ data = [
 inference = [
     "torch>=2.0.0",
     "torchvision>=0.15.0",
-    "transformers>=4.40.0",
+    "transformers>=4.40.0,<4.50.0",
     "peft>=0.10.0",
     "huggingface-hub>=0.23.0",
     "einops>=0.7.0,<0.8.0",

@@ -42,6 +42,10 @@ class GlycOCR:
             model = GlycOCRModel(device=device)
         else:
             model = GlycOCRModel.from_pretrained(model_path, device=device)
+            
+        if hasattr(model.model, "merge_and_unload"):
+            model.model = model.model.merge_and_unload()
+            
         return cls(model=model)
 
     def predict(self, image: "str | Path | torch.Tensor") -> "GlycanParseResult":

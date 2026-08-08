@@ -167,7 +167,7 @@ class GlycOCRModel(nn.Module):
             pixel_values=pixel_values,
             max_new_tokens=max_new_tokens,
             num_beams=1,
-            use_cache=False,
+            use_cache=True,
         )
 
         generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
@@ -219,7 +219,7 @@ class GlycOCRModel(nn.Module):
         instance.lora_alpha = getattr(default_cfg, "lora_alpha", 16)
         instance.target_modules = list(getattr(default_cfg, "target_modules", ["q_proj", "v_proj"]))
         instance.processor = processor
-        instance.model = peft_model
+        instance.model = peft_model.merge_and_unload()
 
         if device is not None:
             instance.to(device)
