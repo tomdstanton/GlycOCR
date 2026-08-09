@@ -162,16 +162,20 @@ def train(
     epochs: int = typer.Option(3, "--epochs", "-e", help="Number of epochs to train"),
     batch_size: int = typer.Option(4, "--batch-size", "-b", help="Batch size"),
     lr: float = typer.Option(5e-4, "--lr", help="Learning rate"),
-    resume: bool = typer.Option(False, "--resume", help="Resume from latest checkpoint in output directory"),
 ) -> None:
     """:chart_with_upwards_trend: Train or fine-tune GlycOCR model on binary SoA dataset."""
     import warnings
     from transformers.utils import logging as hf_logging
+    from transformers.trainer_utils import get_last_checkpoint
 
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
     warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
     warnings.filterwarnings("ignore", message=".*image_processor_class = 'CLIPImageProcessor'.*")
     hf_logging.set_verbosity_error()
+    
+    last_checkpoint = None
+    if output_dir.exists():
+        last_checkpoint = get_last_checkpoint(str(output_dir))
 
     console.print(f"Training model with dataset directory: [cyan]{data_dir}[/cyan]")
     console.print(f"Model output directory: [cyan]{output_dir}[/cyan]")
@@ -199,8 +203,12 @@ def train(
     # Add custom rich callback
     trainer.extra_kwargs["callbacks"] = [RichProgressCallback(console, epochs)]
 
-    console.print("[bold cyan]Starting training...[/bold cyan]")
-    trainer.train(resume_from_checkpoint=resume)
+    if last_checkpoint is not None:
+        console.print(f":inbox_tray: Resuming from checkpoint: [cyan]{last_checkpoint}[/cyan]...")
+    else:
+        console.print("[bold cyan]Starting training...[/bold cyan]")
+        
+    trainer.train(resume_from_checkpoint=True if last_checkpoint else False)
 
     with console.status("[bold green]Saving model..."):
         model.save_pretrained(output_dir)
