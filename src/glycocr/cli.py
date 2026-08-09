@@ -162,10 +162,10 @@ def train(
     epochs: int = typer.Option(3, "--epochs", "-e", help="Number of epochs to train"),
     batch_size: int = typer.Option(4, "--batch-size", "-b", help="Batch size"),
     lr: float = typer.Option(5e-4, "--lr", help="Learning rate"),
+    resume: bool = typer.Option(False, "--resume", help="Resume from latest checkpoint in output directory"),
 ) -> None:
     """:chart_with_upwards_trend: Train or fine-tune GlycOCR model on binary SoA dataset."""
     import warnings
-
     from transformers.utils import logging as hf_logging
 
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
@@ -200,7 +200,7 @@ def train(
     trainer.extra_kwargs["callbacks"] = [RichProgressCallback(console, epochs)]
 
     console.print("[bold cyan]Starting training...[/bold cyan]")
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume)
 
     with console.status("[bold green]Saving model..."):
         model.save_pretrained(output_dir)

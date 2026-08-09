@@ -100,6 +100,7 @@ class GlycOCRTrainer:
         self,
         train_dataset: GlycOCRDataset | None = None,
         eval_dataset: GlycOCRDataset | None = None,
+        resume_from_checkpoint: bool | str = False,
     ) -> Any:  # noqa: ANN401
         """Execute model training loop on provided dataset."""
         dataset_to_use = train_dataset if train_dataset is not None else self.train_dataset
@@ -117,7 +118,8 @@ class GlycOCRTrainer:
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             remove_unused_columns=False,
             logging_steps=1,
-            save_strategy="no",
+            save_strategy="epoch",
+            save_total_limit=3,
             eval_strategy="no" if eval_to_use is None else "epoch",
             report_to="none",
             **self.extra_kwargs,
@@ -133,4 +135,4 @@ class GlycOCRTrainer:
             data_collator=data_collator,
         )
 
-        return hf_trainer.train()
+        return hf_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
