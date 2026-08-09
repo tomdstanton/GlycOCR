@@ -64,6 +64,51 @@ def setup_logging(verbose: int) -> None:
     logging.getLogger("markdown_it").setLevel(logging.INFO)
 
 
+from transformers import TrainerCallback
+
+
+class RichProgressCallback(TrainerCallback):
+    """Custom Hugging Face Trainer callback for rich progress bars."""
+    def __init__(self, console, epochs):
+        self.console = console
+        self.progress = None
+        self.task_id = None
+        self.epochs = epochs
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            TextColumn("Loss: {task.fields[loss]:.4f}"),
+            console=self.console,
+            transient=False,
+        )
+        self.progress.start()
+        self.task_id = self.progress.add_task(f"Training Epoch 1/{self.epochs}", total=state.max_steps, loss=0.0)
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        epoch = int(state.epoch) if state.epoch else 0
+        if self.progress and self.task_id is not None:
+            self.progress.update(self.task_id, description=f"Training Epoch {epoch + 1}/{self.epochs}")
+            
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if self.progress and self.task_id is not None and logs and "loss" in logs:
+            self.progress.update(self.task_id, loss=logs["loss"])
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if self.progress and self.task_id is not None:
+            self.progress.update(self.task_id, advance=1)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self.progress:
+            self.progress.stop()
+
+
 @app.command()
 def infer(
     image: typer.FileBinaryRead = typer.Argument("-", help="Path to SNFG image or `-` for stdin"),
@@ -73,7 +118,7 @@ def infer(
     import warnings
 
     from transformers.utils import logging as hf_logging
-
+    
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
     warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
     warnings.filterwarnings("ignore", message=".*image_processor_class = 'CLIPImageProcessor'.*")
@@ -118,7 +163,7 @@ def train(
     batch_size: int = typer.Option(4, "--batch-size", "-b", help="Batch size"),
     lr: float = typer.Option(5e-4, "--lr", help="Learning rate"),
 ) -> None:
-    """📈 Train or fine-tune GlycOCR model on binary SoA dataset."""
+    """:chart_with_upwards_trend: Train or fine-tune GlycOCR model on binary SoA dataset."""
     import warnings
 
     from transformers.utils import logging as hf_logging
@@ -148,24 +193,32 @@ def train(
         learning_rate=lr,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
+        disable_tqdm=True,  # Turn off standard HF progress bar
     )
+    
+    # Add custom rich callback
+    trainer.extra_kwargs["callbacks"] = [RichProgressCallback(console, epochs)]
 
     console.print("[bold cyan]Starting training...[/bold cyan]")
     trainer.train()
 
     with console.status("[bold green]Saving model..."):
         model.save_pretrained(output_dir)
-    console.print(f"✅ Training complete. Model saved to [cyan]{output_dir}[/cyan]")
+    console.print(f":white_check_mark: Training complete. Model saved to [cyan]{output_dir}[/cyan]")
 
 
-@app.command()
-def synthesize(
+prep_app = typer.Typer(help=":wrench: Data preparation tools")
+app.add_typer(prep_app, name="prep")
+
+
+@prep_app.command("synthesize")
+def prep_synthesize(
     iupac_list: typer.FileText = typer.Argument(
         "-", help="Path to text file containing IUPAC strings or `-` for stdin"
     ),
     out_dir: Path = typer.Argument(..., help="Output directory for generated dataset"),
 ) -> None:
-    """🧪 Synthesize clean SNFG images and save them as a binary SoA dataset."""
+    """:test_tube: Synthesize clean SNFG images and save them as a binary SoA dataset."""
     console.print(f"Synthesizing dataset from list: [cyan]{iupac_list}[/cyan]")
     console.print(f"Output directory: [cyan]{out_dir}[/cyan]")
 
@@ -174,7 +227,6 @@ def synthesize(
     from glycocr.data.synthesizer import IUPACSynthesizer
 
     iupacs = [line.strip() for line in iupac_list if line.strip()]
-
     synth = IUPACSynthesizer()
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -205,7 +257,6 @@ def synthesize(
                 try:
                     img = synth.synthesize(iupac)
 
-                    # Save string
                     str_bytes = iupac.encode("utf-8")
                     str_offset = str_f.tell()
                     str_f.write(str_bytes)
@@ -228,7 +279,6 @@ def synthesize(
 
                 progress.advance(task_id, 1)
 
-    # Save the Struct-of-Arrays (SoA) index
     np.savez(
         index_path,
         img_offsets=np.array(img_offsets, dtype=np.uint64),
@@ -237,17 +287,17 @@ def synthesize(
         str_lengths=np.array(str_lengths, dtype=np.uint32),
     )
 
-    console.print("✅ Synthesis complete. Binary dataset created.")
+    console.print(":white_check_mark: Synthesis complete. Binary dataset created.")
 
 
-@app.command()
-def fetch_dataset(
+@prep_app.command("fetch")
+def prep_fetch(
     output: typer.FileTextWrite = typer.Argument("-", help="Output text file path or `-` for stdout"),
     synthetic_ratio: float = typer.Option(
         0.5, "--synthetic-ratio", help="Ratio of synthetic to real glycans to generate"
     ),
 ) -> None:
-    """📥 Fetch real glycans and generate synthetic variants for training."""
+    """:inbox_tray: Fetch real glycans and generate synthetic variants for training."""
     import random
     import re
 
@@ -255,7 +305,7 @@ def fetch_dataset(
         from glycowork.glycan_data.loader import df_glycan
         from glycowork.motif.processing import canonicalize_iupac
     except ImportError:
-        console.print("[red]❌ Please install glycowork:[/red] uv pip install glycowork")
+        console.print("[red]:x: Please install glycowork:[/red] uv pip install glycowork")
         raise typer.Exit(code=1)
 
     console.print("Loading real glycans from glycowork database...")
@@ -338,7 +388,7 @@ def fetch_dataset(
 
     if output.name != "<stdout>":
         console.print(
-            f"✅ [green]Successfully saved {len(hybrid_dataset)} total IUPAC strings to {output.name}[/green]"
+            f":white_check_mark: [green]Successfully saved {len(hybrid_dataset)} total IUPAC strings to {output.name}[/green]"
         )
 
 
