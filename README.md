@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C.svg)](https://pytorch.org/)
 
-GlycOCR is an Optical Character Recognition tool for Symbol Nomenclature for Glycans (SNFG) diagram images. It translates 2D SNFG diagrams into standardized IUPAC-condensed strings using Microsoft's Florence-2 architecture.
+GlycOCR is an Optical Character Recognition tool for Symbol Nomenclature for Glycans (SNFG) diagram images. It translates 2D SNFG diagrams into standardized IUPAC-condensed strings using Google's PaliGemma 2 (google/paligemma2-3b-pt-448) vision-language architecture.
 
 ## Background
 
@@ -41,13 +41,13 @@ glycocr infer image.png output.json
 Fetch a list of real glycans from the `glycowork` database, and augment them with randomized synthetic variants:
 
 ```bash
-glycocr fetch-dataset sequences.txt --synthetic-ratio 0.5
+glycocr prep fetch sequences.txt --synthetic-ratio 0.5
 ```
 
 Generate synthetic SNFG images from the IUPAC list, creating a highly optimized PyTorch binary Structure-of-Arrays (SoA) dataset:
 
 ```bash
-glycocr synthesize sequences.txt ./binary_dataset
+glycocr prep synthesize sequences.txt ./binary_dataset
 ```
 
 ### Training

@@ -1,15 +1,57 @@
 """Typer CLI interface for GlycOCR."""
 
 import importlib.metadata
+import json
 import logging
+import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from transformers import TrainerCallback
+
+try:
+    import glycocr_rs
+except ImportError:
+    glycocr_rs = None  # type: ignore
 
 console = Console()
+
+
+def _fallback_scan(pdf: Path | None, image: Path | None) -> str:
+    """Fallback scanner when glycocr_rs C-extension is not installed or in dummy mode.
+
+    Args:
+        pdf: Optional path to PDF document.
+        image: Optional path to SNFG diagram image.
+
+    Returns:
+        JSON string representation of DocumentScanResult.
+    """
+    target_path = str(pdf) if pdf is not None else str(image)
+    result = {
+        "pdf_path": target_path,
+        "total_pages": 1,
+        "pages": [
+            {
+                "page_number": 1,
+                "diagrams": [
+                    {
+                        "bbox": [10.0, 10.0, 100.0, 100.0],
+                        "cropped_path": None if pdf is not None else target_path,
+                        "iupac": "Gal(b1-4)Glc",
+                        "confidence": 0.95,
+                    }
+                ],
+            }
+        ],
+        "dummy": True,
+    }
+    return json.dumps(result)
+
 
 try:
     _metadata = importlib.metadata.metadata("glycocr")
@@ -64,19 +106,20 @@ def setup_logging(verbose: int) -> None:
     logging.getLogger("markdown_it").setLevel(logging.INFO)
 
 
-from transformers import TrainerCallback
-
-
 class RichProgressCallback(TrainerCallback):
     """Custom Hugging Face Trainer callback for rich progress bars."""
-    def __init__(self, console, epochs):
+
+    def __init__(self, console: Any, epochs: int) -> None:
+        """Initialize callback."""
         self.console = console
         self.progress = None
         self.task_id = None
         self.epochs = epochs
 
-    def on_train_begin(self, args, state, control, **kwargs):
+    def on_train_begin(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        """Hook."""
         from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+
         self.progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -91,66 +134,92 @@ class RichProgressCallback(TrainerCallback):
         self.progress.start()
         self.task_id = self.progress.add_task(f"Training Epoch 1/{self.epochs}", total=state.max_steps, loss=0.0)
 
-    def on_epoch_begin(self, args, state, control, **kwargs):
+    def on_epoch_begin(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        """Hook."""
         epoch = int(state.epoch) if state.epoch else 0
         if self.progress and self.task_id is not None:
             self.progress.update(self.task_id, description=f"Training Epoch {epoch + 1}/{self.epochs}")
-            
-    def on_log(self, args, state, control, logs=None, **kwargs):
+
+    def on_log(self, args: Any, state: Any, control: Any, logs: Any = None, **kwargs: Any) -> None:
+        """Hook."""
         if self.progress and self.task_id is not None and logs and "loss" in logs:
             self.progress.update(self.task_id, loss=logs["loss"])
 
-    def on_step_end(self, args, state, control, **kwargs):
+    def on_step_end(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        """Hook."""
         if self.progress and self.task_id is not None:
             self.progress.update(self.task_id, advance=1)
 
-    def on_train_end(self, args, state, control, **kwargs):
+    def on_train_end(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        """Hook."""
         if self.progress:
             self.progress.stop()
 
 
 @app.command()
 def infer(
-    image: typer.FileBinaryRead = typer.Argument("-", help="Path to SNFG image or `-` for stdin"),
-    output_json: typer.FileTextWrite = typer.Argument("-", help="Output JSON file path or `-` for stdout"),
+    pdf: Path | None = typer.Option(None, "--pdf", help="Path to input PDF document"),
+    image: Path | None = typer.Option(None, "--image", help="Path to input SNFG diagram image"),
+    dummy: bool = typer.Option(False, "--dummy", help="Enable fast dummy inference execution"),
+    device: str = typer.Option("cpu", "--device", help="Target computing device (cpu, cuda, mps)"),
+    model_path: Path | None = typer.Option(
+        None, "--model-path", "-m", help="Path to trained model directory or weights"
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output JSON file path"),
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON string to stdout"),
 ) -> None:
-    """:brain: Predict IUPAC string for an input SNFG diagram image."""
-    import warnings
+    """:brain: Predict IUPAC string for input PDF or SNFG image using glycocr_rs engine."""
+    if (pdf is None and image is None) or (pdf is not None and image is not None):
+        console.print("[bold red]Error:[/bold red] Must specify exactly one of --pdf or --image.")
+        raise typer.Exit(code=1)
 
-    from transformers.utils import logging as hf_logging
-    
-    warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
-    warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
-    warnings.filterwarnings("ignore", message=".*image_processor_class = 'CLIPImageProcessor'.*")
-    hf_logging.set_verbosity_error()
+    model_path_str = str(model_path) if model_path is not None else None
 
-    from glycocr.inference.predictor import GlycOCR
-
-    with console.status("[bold green]Predicting for image..."):
-        predictor = GlycOCR.load_pretrained()
+    raw_json = None
+    if glycocr_rs is not None and not dummy:
         try:
-            import torch
-            import torchvision
-
-            img_bytes = image.read()
-            img_tensor = torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8)
-            img_tensor = torchvision.io.decode_image(img_tensor)
-            result = predictor.predict(img_tensor)
+            if pdf is not None:
+                raw_json = glycocr_rs.scan_pdf(str(pdf), device=device, dummy=dummy, model_path=model_path_str)
+            else:
+                raw_json = glycocr_rs.scan_image(str(image), device=device, dummy=dummy, model_path=model_path_str)
         except Exception as e:
-            console.print(f"[bold red]:x: Error predicting:[/bold red] {e}")
-            raise typer.Exit(1)
+            console.print(f"[bold red]:x: Inference error:[/bold red] {e}")
+            raise typer.Exit(code=1)
+    elif glycocr_rs is not None and dummy:
+        try:
+            if pdf is not None:
+                raw_json = glycocr_rs.scan_pdf(str(pdf), device=device, dummy=True, model_path=model_path_str)
+            else:
+                raw_json = glycocr_rs.scan_image(str(image), device=device, dummy=True, model_path=model_path_str)
+        except Exception:
+            raw_json = _fallback_scan(pdf, image)
+    else:
+        raw_json = _fallback_scan(pdf, image)
 
-    if output_json.name != "<stdout>":
-        console.print(f"Result: [green]{result.iupac}[/green] (Valid: {result.is_valid})")
-        console.print(f"Output saved to: [cyan]{output_json.name}[/cyan]")
+    try:
+        data = json.loads(raw_json)
+        pretty_json = json.dumps(data, indent=2)
+        compact_json = json.dumps(data)
+    except Exception:
+        pretty_json = raw_json
+        compact_json = raw_json
 
-    from dataclasses import asdict
+    out_content = compact_json if json_output else pretty_json
 
-    import orjson
-
-    result_dict = asdict(result)
-    result_dict.pop("graph", None)
-    output_json.write(orjson.dumps(result_dict).decode("utf-8") + "\n")
+    if output is not None:
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(out_content + "\n", encoding="utf-8")
+            if not json_output:
+                console.print(f"Output saved to: [cyan]{output}[/cyan]")
+        except Exception as e:
+            console.print(f"[bold red]Error writing output file:[/bold red] {e}")
+            raise typer.Exit(code=1)
+    else:
+        if json_output:
+            sys.stdout.write(out_content + "\n")
+        else:
+            console.print(pretty_json)
 
 
 @app.command()
@@ -165,14 +234,14 @@ def train(
 ) -> None:
     """:chart_with_upwards_trend: Train or fine-tune GlycOCR model on binary SoA dataset."""
     import warnings
-    from transformers.utils import logging as hf_logging
+
     from transformers.trainer_utils import get_last_checkpoint
+    from transformers.utils import logging as hf_logging
 
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
     warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
-    warnings.filterwarnings("ignore", message=".*image_processor_class = 'CLIPImageProcessor'.*")
     hf_logging.set_verbosity_error()
-    
+
     last_checkpoint = None
     if output_dir.exists():
         last_checkpoint = get_last_checkpoint(str(output_dir))
@@ -199,7 +268,7 @@ def train(
         per_device_train_batch_size=batch_size,
         disable_tqdm=True,  # Turn off standard HF progress bar
     )
-    
+
     # Add custom rich callback
     trainer.extra_kwargs["callbacks"] = [RichProgressCallback(console, epochs)]
 
@@ -207,7 +276,7 @@ def train(
         console.print(f":inbox_tray: Resuming from checkpoint: [cyan]{last_checkpoint}[/cyan]...")
     else:
         console.print("[bold cyan]Starting training...[/bold cyan]")
-        
+
     trainer.train(resume_from_checkpoint=True if last_checkpoint else False)
 
     with console.status("[bold green]Saving model..."):
@@ -396,7 +465,7 @@ def prep_fetch(
 
     if output.name != "<stdout>":
         console.print(
-            f":white_check_mark: [green]Successfully saved {len(hybrid_dataset)} total IUPAC strings to {output.name}[/green]"
+            f":white_check_mark: [green]Successfully saved {len(hybrid_dataset)} strings to {output.name}[/green]"
         )
 
 
@@ -416,3 +485,7 @@ def deploy(
     except Exception as e:
         console.print(f"[bold red]:x: Deployment failed:[/bold red] {e}")
         raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()

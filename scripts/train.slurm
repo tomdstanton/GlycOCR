@@ -33,16 +33,16 @@ uv sync --extra train
 DATA_DIR="/scratch/kr58/tom/glycocr_data"
 if [ ! -d "$DATA_DIR" ]; then
     echo "Fetching and generating IUPAC sequences..."
-    uv run glycocr fetch-dataset iupacs.txt --synthetic-ratio 1.0
+    uv run glycocr prep fetch iupacs.txt --synthetic-ratio 1.0
     
     echo "Synthesizing training data..."
-    uv run glycocr synthesize iupacs.txt $DATA_DIR
+    uv run glycocr prep synthesize iupacs.txt $DATA_DIR
 else
     echo "Training data already exists at $DATA_DIR"
 fi
 
 # 5. Run the training pipeline
 echo "Kicking off model training..."
-uv run glycocr train --data-dir $DATA_DIR --output-dir models/glycocr_florence2
+uv run glycocr train $DATA_DIR models/glycocr_paligemma2
 
 echo "Training complete!"

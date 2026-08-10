@@ -1,4 +1,4 @@
-"""Data augmentation pipeline for introducing realistic PDF/image degradation artifacts using torchvision.transforms.v2."""
+"""Data augmentation pipeline for introducing realistic PDF/image degradation artifacts."""
 
 import random
 
@@ -11,12 +11,14 @@ class RandomGaussianNoise(nn.Module):
     """Custom Gaussian Noise transform for torchvision v2."""
 
     def __init__(self, mean: float = 0.0, std: float = 0.2, p: float = 0.2) -> None:
+        """Initialize."""
         super().__init__()
         self.mean = mean
         self.std = std
         self.p = p
 
     def forward(self, img: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         if torch.rand(1).item() > self.p:
             return img
 

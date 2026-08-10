@@ -1,0 +1,38 @@
+[package]
+name = "glycocr"
+version = "0.1.0"
+edition = "2024"
+authors = ["GlycOCR Team"]
+description = "PaliGemma-powered vision pipeline for SNFG diagram detection and OCR in glycobiology literature"
+
+[lib]
+name = "glycocr_rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "stub_gen"
+path = "src/bin/stub_gen.rs"
+
+[dependencies]
+candle-core = "0.8.2"
+candle-nn = "0.8.2"
+candle-transformers = "0.8.2"
+pdfium-render = "0.8.27"
+lopdf = "0.35.0"
+image = "0.25.5"
+clap = { version = "4.5", features = ["derive"] }
+thiserror = "2.0"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+pyo3 = { version = "0.23", features = ["abi3-py310"] }
+pyo3-stub-gen = "0.6"
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = []
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]

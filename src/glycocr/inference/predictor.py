@@ -42,17 +42,17 @@ class GlycOCR:
             model = GlycOCRModel(device=device)
         else:
             model = GlycOCRModel.from_pretrained(model_path, device=device)
-            
+
         if hasattr(model.model, "merge_and_unload"):
             model.model = model.model.merge_and_unload()
-            
+
         return cls(model=model)
 
-    def predict(self, image: "str | Path | torch.Tensor") -> "GlycanParseResult":
+    def predict(self, image: "str | Path | torch.Tensor", prompt: str = "caption en\n") -> "GlycanParseResult":
         """Predict IUPAC string and validation status for a given input image."""
         if self.model is None:
             raise ValueError("Model is not loaded. Use load_pretrained() or pass a model to __init__.")
 
-        iupac_string = self.model.generate(image)
+        iupac_string = self.model.generate(image, prompt=prompt)
         parsed = self.parser.parse(iupac_string)
         return parsed

@@ -15,6 +15,9 @@ clean:
 
 install: clean
     uv sync
+    uvx maturin develop
+    cd glycocr_core && cargo run --bin stub_gen
+    cp glycocr_core/glycocr_rs.pyi src/glycocr_rs/__init__.pyi
 
 # Run the test suite
 test: install

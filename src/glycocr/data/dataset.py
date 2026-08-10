@@ -1,4 +1,4 @@
-"""PyTorch Dataset implementation formatted for Florence-2 Vision-Language Model."""
+"""PyTorch Dataset implementation formatted for PaliGemma 2 Vision-Language Model."""
 
 from pathlib import Path
 from typing import Any
@@ -7,20 +7,18 @@ import torch
 from torch.utils.data import Dataset
 from transformers import AutoProcessor
 
-from glycocr.models.model import apply_florence2_patches
-
 
 class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
-    """Dataset loading (image, IUPAC string) pairs formatted for Florence-2 processing."""
+    """Dataset loading (image, IUPAC string) pairs formatted for PaliGemma 2 processing."""
 
     def __init__(
         self,
         data_dir: str | Path | None = None,
         items: list[tuple[Any, str]] | None = None,
         processor: Any = None,  # noqa: ANN401
-        task_prompt: str = "<MORE_DETAILED_CAPTION>",
+        task_prompt: str = "caption en\n",
         max_length: int = 128,
-        target_size: tuple[int, int] | None = (768, 768),
+        target_size: tuple[int, int] | None = (448, 448),
         degrade_prob: float = 0.5,
     ) -> None:
         """Initialize dataset with image-IUPAC pairs or binary dataset directory."""
@@ -51,8 +49,7 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
             self.num_samples = len(self.items)
 
         if processor is None:
-            apply_florence2_patches()
-            self.processor = AutoProcessor.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True)
+            self.processor = AutoProcessor.from_pretrained("google/paligemma2-3b-pt-448")
         else:
             self.processor = processor
 
@@ -119,24 +116,34 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         # Apply dynamic degradations directly on the image tensor during fetch
         image_tensor = self.degrader.degrade(image_tensor)
 
-        # Process the text using processor's tokenizer
-        input_ids = self.processor.tokenizer(text=self.task_prompt, return_tensors="pt").input_ids.squeeze(0)
+        # Construct combined token sequence for PaliGemma 2 Causal LM training (prompt + target + EOS)
+        prompt_res = self.processor.tokenizer(text=self.task_prompt, add_special_tokens=False)
+        prompt_ids = prompt_res["input_ids"] if isinstance(prompt_res, dict) else prompt_res.input_ids
+        if isinstance(prompt_ids, torch.Tensor):
+            prompt_ids = prompt_ids.tolist()
 
-        labels = self.processor.tokenizer(
-            text=iupac,
-            return_tensors="pt",
-            padding="max_length",
-            max_length=self.max_length,
-            truncation=True,
-        ).input_ids.squeeze(0)
+        target_res = self.processor.tokenizer(text=iupac, add_special_tokens=False)
+        target_ids = target_res["input_ids"] if isinstance(target_res, dict) else target_res.input_ids
+        if isinstance(target_ids, torch.Tensor):
+            target_ids = target_ids.tolist()
 
-        pad_id = self.processor.tokenizer.pad_token_id
-        if pad_id is not None:
-            labels = labels.clone()
-            labels[labels == pad_id] = -100
+        eos_id = getattr(self.processor.tokenizer, "eos_token_id", None)
+
+        combined = list(prompt_ids) + list(target_ids)
+        if eos_id is not None:
+            combined.append(eos_id)
+
+        combined = combined[: self.max_length]
+        pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
+        if pad_id is None:
+            pad_id = 0
+
+        padded_input_ids = combined + [pad_id] * (self.max_length - len(combined))
+        prompt_len = min(len(prompt_ids), len(combined))
+        padded_labels = [-100] * prompt_len + combined[prompt_len:] + [-100] * (self.max_length - len(combined))
 
         return {
             "raw_images": image_tensor,
-            "input_ids": input_ids,
-            "labels": labels,
+            "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
+            "labels": torch.tensor(padded_labels, dtype=torch.long),
         }

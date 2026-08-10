@@ -34,7 +34,7 @@ class DataCollatorForGlycOCR:
         return batch
 
 
-class _GlycOCRHFTrainer(Trainer):
+class _GlycOCRHFTrainer(Trainer):  # type: ignore
     def _prepare_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
         inputs = super()._prepare_inputs(inputs)
 
@@ -43,9 +43,8 @@ class _GlycOCRHFTrainer(Trainer):
 
             raw_images = inputs.pop("raw_images")
 
-            # Since Florence-2 processor target size is typically 768 or 1024.
-            # Let's use 768x768 for now, as that's typical for Florence-2.
-            target_size = (768, 768)
+            # Target resolution for PaliGemma 2 (google/paligemma2-3b-pt-448) is 448x448
+            target_size = (448, 448)
 
             resized_images = []
             for img in raw_images:
@@ -57,13 +56,13 @@ class _GlycOCRHFTrainer(Trainer):
 
             pixel_values = torch.stack(resized_images)
 
-            # Normalize with DaViT mean/std expected by Florence-2
+            # Normalize with SigLIP mean/std expected by PaliGemma 2
             device = pixel_values.device
-            mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, 3, 1, 1)
-            std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, 3, 1, 1)
+            mean = torch.tensor([0.5, 0.5, 0.5], device=device).view(1, 3, 1, 1)
+            std = torch.tensor([0.5, 0.5, 0.5], device=device).view(1, 3, 1, 1)
 
             pixel_values = (pixel_values - mean) / std
-            inputs["pixel_values"] = pixel_values.to(next(self.model.parameters()).dtype)  # type: ignore
+            inputs["pixel_values"] = pixel_values.to(next(self.model.parameters()).dtype)
 
         return inputs
 

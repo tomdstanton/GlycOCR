@@ -29,15 +29,15 @@ dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "orjson>=3.11.9",
+    "peft>=0.12.0",
 ]
 
 [project.optional-dependencies]
 data = [
     "glycowork>=1.0.0",
     "numpy>=1.24.0",
-    "pymupdf>=1.20.0",
 ]
-train = [
+inference = [
     "torch>=2.0.0",
     "torchvision>=0.15.0",
     "transformers>=4.45.0,<4.50.0",
@@ -45,8 +45,12 @@ train = [
     "huggingface-hub>=0.23.0",
     "einops>=0.7.0,<0.8.0",
     "timm>=0.9.0",
-    "kornia>=0.7.0",
+    "pymupdf>=1.20.0",
     "glycocr[data]",
+]
+train = [
+    "kornia>=0.7.0",
+    "glycocr[inference]",
 ]
 all = [
     "glycocr[train]",
@@ -77,31 +81,10 @@ requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
-manifest-path = "glycocr_core/Cargo.toml"
-python-source = "src"
+manifest-path = "Cargo.toml"
+python-source = "../src"
 module-name = "glycocr_rs"
-features = ["extension-module"]
+features = ["pyo3/extension-module"]
 
-
-[tool.ruff]
-line-length = 120
-exclude = [
-    "*_version.py",".agents", ".git", ".venv", "__pycache__", "*.pyi"]
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "D"]
-extend-select = ["ANN", "PYI"]
-ignore = ["ANN401"]
-preview = true
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[tool.ty.rules]
-missing-type-argument = "error"
-possibly-unresolved-reference = "warn"
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D", "ANN"]
-"scripts/*" = ["D", "ANN"]
+[tool.pyo3-stub-gen]
+output-dir = "."
