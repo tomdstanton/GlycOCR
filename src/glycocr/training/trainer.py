@@ -108,6 +108,8 @@ class GlycOCRTrainer:
         if dataset_to_use is None:
             raise ValueError("No training dataset provided to GlycOCRTrainer.")
 
+        callbacks = self.extra_kwargs.pop("callbacks", None)
+
         training_args = TrainingArguments(
             output_dir=self.output_dir,
             learning_rate=self.learning_rate,
@@ -132,6 +134,7 @@ class GlycOCRTrainer:
             train_dataset=dataset_to_use,
             eval_dataset=eval_to_use,
             data_collator=data_collator,
+            callbacks=callbacks,
         )
 
         return hf_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
