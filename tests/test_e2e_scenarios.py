@@ -103,5 +103,8 @@ def test_e2e_cli_error_recovery_workflow(tmp_path: Path) -> None:
     assert res_deploy.exit_code != 0
 
     # 3. Train on non-existent dataset dir
-    res_train = runner.invoke(app, ["train", str(tmp_path / "non_existent_dir"), str(tmp_path / "out")])
-    assert res_train.exit_code != 0 or "Error" in res_train.stdout or "FileNotFoundError" in str(res_train.exception)
+    with patch("glycocr.models.model.GlycOCRModel"):
+        res_train = runner.invoke(app, ["train", str(tmp_path / "non_existent_dir"), str(tmp_path / "out")])
+        assert (
+            res_train.exit_code != 0 or "Error" in res_train.stdout or "FileNotFoundError" in str(res_train.exception)
+        )
