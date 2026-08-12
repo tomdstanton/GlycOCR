@@ -236,11 +236,9 @@ def train(
     import warnings
 
     from transformers.trainer_utils import get_last_checkpoint
-    from transformers.utils import logging as hf_logging
 
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.modeling_attn_mask_utils")
     warnings.filterwarnings("ignore", message=".*use_return_dict is deprecated.*")
-    hf_logging.set_verbosity_error()
 
     last_checkpoint = None
     if output_dir.exists():
@@ -266,11 +264,7 @@ def train(
         learning_rate=lr,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
-        disable_tqdm=True,  # Turn off standard HF progress bar
     )
-
-    # Add custom rich callback
-    trainer.extra_kwargs["callbacks"] = [RichProgressCallback(console, epochs)]
 
     if last_checkpoint is not None:
         console.print(f":inbox_tray: Resuming from checkpoint: [cyan]{last_checkpoint}[/cyan]...")
