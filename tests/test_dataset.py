@@ -30,7 +30,9 @@ def test_dataset_sequence_alignment_and_masking(mock_hf_processor) -> None:
     dummy_img = torch.zeros((3, 64, 64), dtype=torch.uint8)
     items = [(dummy_img, "Man(a1-3)Man")]
 
-    dataset = GlycOCRDataset(items=items, processor=mock_hf_processor, max_length=max_length, degrade_prob=0.0)
+    dataset = GlycOCRDataset(
+        items=items, processor=mock_hf_processor, max_length=max_length, degrade_prob=0.0, num_image_tokens=0
+    )
     sample = dataset[0]
 
     input_ids = sample["input_ids"]
@@ -54,7 +56,9 @@ def test_dataset_len_and_item_shapes(sample_image_path, mock_hf_processor) -> No
         (sample_image_path, "Gal(b1-4)Glc"),
         (torch.zeros((3, 100, 100), dtype=torch.uint8), "Man(a1-3)Man"),
     ]
-    dataset = GlycOCRDataset(items=items, processor=mock_hf_processor, max_length=32, degrade_prob=0.0)
+    dataset = GlycOCRDataset(
+        items=items, processor=mock_hf_processor, max_length=32, degrade_prob=0.0, num_image_tokens=0
+    )
 
     assert len(dataset) == 2
     item = dataset[0]
@@ -72,7 +76,9 @@ def test_dataset_item_with_pil_and_numpy(mock_hf_processor) -> None:
     np_img = np.zeros((64, 64, 3), dtype=np.uint8)
 
     items = [(pil_img, "Gal(b1-4)Glc"), (np_img, "Man(a1-3)Man")]
-    dataset = GlycOCRDataset(items=items, processor=mock_hf_processor, max_length=16, degrade_prob=0.0)
+    dataset = GlycOCRDataset(
+        items=items, processor=mock_hf_processor, max_length=16, degrade_prob=0.0, num_image_tokens=0
+    )
 
     assert len(dataset) == 2
     sample1 = dataset[0]
@@ -89,6 +95,7 @@ def test_dataset_binary_memmap_loading(mock_binary_dataset_dir, mock_hf_processo
         processor=mock_hf_processor,
         max_length=16,
         degrade_prob=0.0,
+        num_image_tokens=0,
     )
 
     assert len(dataset) == 1
@@ -103,7 +110,9 @@ def test_dataset_binary_memmap_loading(mock_binary_dataset_dir, mock_hf_processo
 def test_dataset_degradation_pipeline(sample_image_path, mock_hf_processor) -> None:
     """Test that degradation pipeline is executed without error when degrade_prob > 0."""
     items = [(sample_image_path, "Gal(b1-4)Glc")]
-    dataset = GlycOCRDataset(items=items, processor=mock_hf_processor, max_length=16, degrade_prob=1.0)
+    dataset = GlycOCRDataset(
+        items=items, processor=mock_hf_processor, max_length=16, degrade_prob=1.0, num_image_tokens=0
+    )
 
     sample = dataset[0]
     assert sample["raw_images"] is not None

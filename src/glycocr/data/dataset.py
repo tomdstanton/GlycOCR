@@ -17,9 +17,10 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         items: list[tuple[Any, str]] | None = None,
         processor: Any = None,  # noqa: ANN401
         task_prompt: str = "caption en\n",
-        max_length: int = 128,
+        max_length: int = 1152,
         target_size: tuple[int, int] | None = (448, 448),
         degrade_prob: float = 0.5,
+        num_image_tokens: int = 1024,
     ) -> None:
         """Initialize dataset with image-IUPAC pairs or binary dataset directory."""
         self.data_dir = Path(data_dir) if data_dir else None
@@ -27,6 +28,7 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         self.task_prompt = task_prompt
         self.max_length = max_length
         self.target_size = target_size
+        self.num_image_tokens = num_image_tokens
 
         from glycocr.data.degrader import SNFGDegrader
 
@@ -100,7 +102,7 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
                 img_bytes = Path(image_item).read_bytes()
                 image_tensor = torchvision.io.decode_image(
                     torch.frombuffer(bytearray(img_bytes), dtype=torch.uint8),
-                    mode=torchvision.io.image.ImageReadMode.RGB,
+                    mode=torchvision.io.ImageReadMode.RGB,
                 )
             elif isinstance(image_item, torch.Tensor):
                 image_tensor = image_item
@@ -116,11 +118,29 @@ class GlycOCRDataset(Dataset[dict[str, torch.Tensor]]):
         # Apply dynamic degradations directly on the image tensor during fetch
         image_tensor = self.degrader.degrade(image_tensor)
 
-        # Construct combined token sequence for PaliGemma 2 Causal LM training (prompt + target + EOS)
+        # Retrieve special image token ID for PaliGemma (257152)
+        image_token_id = getattr(self.processor.tokenizer, "image_token_id", None)
+        if image_token_id is None:
+            try:
+                encode_fn = getattr(self.processor.tokenizer, "encode", None)
+                if callable(encode_fn):
+                    encoded = encode_fn("<image>", add_special_tokens=False)
+                    if encoded and isinstance(encoded, list):
+                        image_token_id = encoded[0]
+            except Exception:
+                pass
+        if image_token_id is None or not isinstance(image_token_id, int):
+            image_token_id = 257152
+
+        image_tokens = [image_token_id] * self.num_image_tokens if self.num_image_tokens > 0 else []
+
+        # Construct combined token sequence for PaliGemma 2 Causal LM training (<image>*1024 + prompt + target + EOS)
         prompt_res = self.processor.tokenizer(text=self.task_prompt, add_special_tokens=False)
-        prompt_ids = prompt_res["input_ids"] if isinstance(prompt_res, dict) else prompt_res.input_ids
-        if isinstance(prompt_ids, torch.Tensor):
-            prompt_ids = prompt_ids.tolist()
+        prompt_text_ids = prompt_res["input_ids"] if isinstance(prompt_res, dict) else prompt_res.input_ids
+        if isinstance(prompt_text_ids, torch.Tensor):
+            prompt_text_ids = prompt_text_ids.tolist()
+
+        prompt_ids = image_tokens + list(prompt_text_ids)
 
         target_res = self.processor.tokenizer(text=iupac, add_special_tokens=False)
         target_ids = target_res["input_ids"] if isinstance(target_res, dict) else target_res.input_ids

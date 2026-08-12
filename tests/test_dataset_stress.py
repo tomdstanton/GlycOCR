@@ -75,7 +75,7 @@ def test_stress_short_iupac_string():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "Neu5Ac")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "Neu5Ac")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     # combined: prompt (4) + target (1) + eos (1) = 6 tokens
@@ -95,7 +95,11 @@ def test_stress_extremely_long_iupac_string_truncation():
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
     ds = GlycOCRDataset(
-        items=[(dummy_img, "VeryLongIUPAC...")], processor=proc, max_length=max_length, degrade_prob=0.0
+        items=[(dummy_img, "VeryLongIUPAC...")],
+        processor=proc,
+        max_length=max_length,
+        degrade_prob=0.0,
+        num_image_tokens=0,
     )
     sample = ds[0]
 
@@ -120,7 +124,7 @@ def test_stress_prompt_exceeds_max_length():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "Test")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "Test")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     verify_dataset_sample_invariants(sample, max_length=max_length, expected_prompt_len=20, expected_combined_len=24)
@@ -140,7 +144,7 @@ def test_stress_eos_token_id_none():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "Gal(b1-4)Glc")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "Gal(b1-4)Glc")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     # combined: prompt (2) + target (2) = 4 tokens
@@ -159,7 +163,7 @@ def test_stress_pad_token_id_none():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "Gal(b1-4)Glc")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "Gal(b1-4)Glc")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     # combined: prompt (2) + target (2) + eos (1) = 5 tokens
@@ -179,7 +183,7 @@ def test_stress_exact_combined_length_equals_max_length():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "ExactFit")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "ExactFit")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     verify_dataset_sample_invariants(sample, max_length=max_length, expected_prompt_len=2, expected_combined_len=6)
@@ -197,7 +201,7 @@ def test_stress_varied_max_lengths(max_len: int):
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "MultiLenTest")], processor=proc, max_length=max_len, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "MultiLenTest")], processor=proc, max_length=max_len, num_image_tokens=0)
     sample = ds[0]
 
     # total untruncated combined = 3 + 5 + 1 = 9
@@ -214,7 +218,7 @@ def test_stress_empty_target_string():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     # combined: 2 prompt + 0 target + 1 eos = 3 tokens
@@ -233,7 +237,7 @@ def test_stress_tokenizer_returns_torch_tensors():
 
     proc = create_mock_processor(prompt_ids, target_ids, eos_id=eos_id, pad_id=pad_id)
     dummy_img = torch.zeros((3, 32, 32), dtype=torch.uint8)
-    ds = GlycOCRDataset(items=[(dummy_img, "TensorTest")], processor=proc, max_length=max_length, degrade_prob=0.0)
+    ds = GlycOCRDataset(items=[(dummy_img, "TensorTest")], processor=proc, max_length=max_length, num_image_tokens=0)
     sample = ds[0]
 
     # combined: 3 prompt + 2 target + 1 eos = 6 tokens
